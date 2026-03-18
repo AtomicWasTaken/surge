@@ -37,7 +37,7 @@ go install ./cmd/surge
 ```yaml
 ai:
   provider: litellm
-  model: anthropic/claude-3-5-sonnet-20241022
+  model: claude-sonnet-4-6
   baseUrl: http://localhost:4000
   apiKey: "${LITELLM_API_KEY}"
 ```
@@ -62,7 +62,7 @@ surge review --pr 123
 ```yaml
 ai:
   provider: litellm  # or "claude"
-  model: anthropic/claude-3-5-sonnet-20241022
+  model: claude-sonnet-4-6
   baseUrl: http://localhost:4000  # litellm proxy URL
   apiKey: "${LITELLM_API_KEY}"
 
@@ -96,6 +96,7 @@ All config values can be set via environment variables:
 |----------|-------------|
 | `SURGE_GITHUB_TOKEN` | GitHub personal access token |
 | `SURGE_AI_API_KEY` | AI API key |
+| `SURGE_AI_MODEL` | AI model name |
 | `SURGE_AI_PROVIDER` | `litellm` or `claude` |
 | `SURGE_AI_BASE_URL` | litellm proxy URL |
 | `SURGE_CONTEXT_DEPTH` | `diff-only`, `relevant`, or `full` |
