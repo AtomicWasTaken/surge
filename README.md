@@ -123,7 +123,7 @@ jobs:
 
       - name: Run review
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SURGE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SURGE_AI_API_KEY: ${{ secrets.SURGE_AI_API_KEY }}
         run: surge review --pr ${{ github.event.pull_request.number }}
 ```

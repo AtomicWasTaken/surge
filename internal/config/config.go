@@ -90,7 +90,7 @@ func Load(configPath string) (*Config, error) {
 	v.AutomaticEnv()
 
 	// Bind specific env vars
-	_ = v.BindEnv("github.token", "SURGE_GITHUB_TOKEN")
+	_ = v.BindEnv("github.token", "SURGE_GITHUB_TOKEN", "GITHUB_TOKEN")
 	_ = v.BindEnv("github.owner", "SURGE_GITHUB_OWNER")
 	_ = v.BindEnv("github.repo", "SURGE_GITHUB_REPO")
 	_ = v.BindEnv("github.prNumber", "SURGE_PR_NUMBER")
@@ -130,6 +130,8 @@ func Load(configPath string) (*Config, error) {
 
 	// Override with env vars that were explicitly set
 	if token := os.Getenv("SURGE_GITHUB_TOKEN"); token != "" {
+		cfg.GitHub.Token = token
+	} else if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		cfg.GitHub.Token = token
 	}
 	if apiKey := os.Getenv("SURGE_AI_API_KEY"); apiKey != "" {

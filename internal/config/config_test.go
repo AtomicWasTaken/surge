@@ -37,6 +37,15 @@ func TestLoad_EnvOverride(t *testing.T) {
 	assert.Equal(t, "test-api-key", cfg.AI.APIKey)
 }
 
+func TestLoad_GitHubTokenFallback(t *testing.T) {
+	os.Setenv("GITHUB_TOKEN", "fallback-token")
+	defer os.Unsetenv("GITHUB_TOKEN")
+
+	cfg, err := Load("")
+	assert.NoError(t, err)
+	assert.Equal(t, "fallback-token", cfg.GitHub.Token)
+}
+
 func TestLoad_ConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "surge.yaml")
