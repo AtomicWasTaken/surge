@@ -44,6 +44,7 @@ func TestRenderSummary_ModernLayoutIncludesCoreSections(t *testing.T) {
 	assertContains(t, rendered, "## 🧭 Findings")
 	assertContains(t, rendered, "### 🟠 HIGH (1)")
 	assertContains(t, rendered, "<summary><strong>Refresh token can be replayed</strong>")
+	assertContains(t, rendered, "<code>internal/auth/session.go:42</code>")
 	assertContains(t, rendered, "## 🎯 Vibe Check")
 	assertContains(t, rendered, "**Score:** 8/10")
 	assertContains(t, rendered, "████████░░")

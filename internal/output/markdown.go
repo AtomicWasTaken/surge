@@ -78,13 +78,13 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 			emoji := severityEmoji(sev)
 			sb.WriteString(fmt.Sprintf("### %s %s (%d)\n\n", emoji, severityLabel(sev), len(findings)))
 			for i, f := range findings {
-				location := "`" + f.File + "`"
+				location := f.File
 				if f.Line > 0 {
-					location = fmt.Sprintf("`%s:%d`", f.File, f.Line)
+					location = fmt.Sprintf("%s:%d", f.File, f.Line)
 				}
 				sb.WriteString("<details>\n")
-				sb.WriteString(fmt.Sprintf("<summary><strong>%s</strong> · %s · <code>%s</code></summary>\n\n",
-					sanitizeTableCell(f.Title), location, f.Category))
+				sb.WriteString(fmt.Sprintf("<summary><strong>%s</strong> · <code>%s</code> · <code>%s</code></summary>\n\n",
+					sanitizeTableCell(f.Title), sanitizeInlineCode(location), f.Category))
 				sb.WriteString(f.Body)
 				sb.WriteString("\n\n</details>\n\n")
 				if i != len(findings)-1 {
@@ -176,6 +176,10 @@ func groupBySeverity(findings []model.Finding) map[model.Severity][]model.Findin
 
 func sanitizeTableCell(v string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(v, "|", "\\|"), "\n", "<br>")
+}
+
+func sanitizeInlineCode(v string) string {
+	return strings.ReplaceAll(v, "`", "")
 }
 
 func vibeBar(score int) string {
