@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/AtomicWasTaken/surge/compare/v0.3.0...v0.3.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* **ci:** upload only archive files in release backfill workflow ([96cf502](https://github.com/AtomicWasTaken/surge/commit/96cf50216220c65bd52ba0f4f8f8ecce85b3f168))
+
+
+### Reverts
+
+* remove release-please-triggered GoReleaser publish step ([1ff301e](https://github.com/AtomicWasTaken/surge/commit/1ff301e8809d3e72072d9f202a8ce4c5790ea213))
+
 ## [0.3.0](https://github.com/AtomicWasTaken/surge/compare/v0.2.0...v0.3.0) (2026-03-18)
 
 
