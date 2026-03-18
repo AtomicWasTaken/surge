@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/AtomicWasTaken/surge/internal/ai"
 	"github.com/AtomicWasTaken/surge/internal/config"
@@ -384,22 +386,22 @@ func buildSurgeLabelSpecs(prefix string, result *model.ReviewResult) []labelSpec
 
 	return []labelSpec{
 		{
-			Name:        prefix + " reviewed",
+			Name:        labelName(prefix, "Reviewed"),
 			Color:       "1f6feb",
 			Description: "PR has been reviewed by surge",
 		},
 		{
-			Name:        prefix + " effort: " + effort,
+			Name:        labelName(prefix, "Effort / "+titleWord(effort)),
 			Color:       reviewEffortColor(effort),
 			Description: "Estimated review effort from surge analysis",
 		},
 		{
-			Name:        prefix + " decision: " + decision,
+			Name:        labelName(prefix, "Decision / "+decisionTitle(decision)),
 			Color:       decisionColor(decision),
 			Description: "Review decision from surge",
 		},
 		{
-			Name:        prefix + " findings: " + findings,
+			Name:        labelName(prefix, "Findings / "+findingsTitle(findings)),
 			Color:       findingsColor(findings),
 			Description: "Whether surge reported actionable findings",
 		},
@@ -407,10 +409,11 @@ func buildSurgeLabelSpecs(prefix string, result *model.ReviewResult) []labelSpec
 }
 
 func isManagedSurgeLabel(prefix, label string) bool {
-	return label == prefix+" reviewed" ||
-		strings.HasPrefix(label, prefix+" effort: ") ||
-		strings.HasPrefix(label, prefix+" decision: ") ||
-		strings.HasPrefix(label, prefix+" findings: ")
+	base := titleWord(prefix)
+	return label == base+": Reviewed" ||
+		strings.HasPrefix(label, base+": Effort / ") ||
+		strings.HasPrefix(label, base+": Decision / ") ||
+		strings.HasPrefix(label, base+": Findings / ")
 }
 
 func classifyReviewEffort(result *model.ReviewResult) string {
@@ -467,4 +470,38 @@ func findingsColor(findings string) string {
 	default:
 		return "fb8500"
 	}
+}
+
+func labelName(prefix, suffix string) string {
+	return titleWord(prefix) + ": " + suffix
+}
+
+func decisionTitle(decision string) string {
+	switch decision {
+	case "approved":
+		return "Approved"
+	default:
+		return "Changes Requested"
+	}
+}
+
+func findingsTitle(findings string) string {
+	switch findings {
+	case "none found":
+		return "None"
+	default:
+		return "Present"
+	}
+}
+
+func titleWord(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }

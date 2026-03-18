@@ -35,21 +35,21 @@ func TestBuildSurgeLabelSpecs(t *testing.T) {
 	})
 
 	assert.Len(t, labels, 4)
-	assert.Equal(t, "surge reviewed", labels[0].Name)
+	assert.Equal(t, "Surge: Reviewed", labels[0].Name)
 	assert.Equal(t, "1f6feb", labels[0].Color)
-	assert.Equal(t, "surge effort: low", labels[1].Name)
+	assert.Equal(t, "Surge: Effort / Low", labels[1].Name)
 	assert.Equal(t, "2da44e", labels[1].Color)
-	assert.Equal(t, "surge decision: approved", labels[2].Name)
+	assert.Equal(t, "Surge: Decision / Approved", labels[2].Name)
 	assert.Equal(t, "2da44e", labels[2].Color)
-	assert.Equal(t, "surge findings: none found", labels[3].Name)
+	assert.Equal(t, "Surge: Findings / None", labels[3].Name)
 	assert.Equal(t, "2da44e", labels[3].Color)
 }
 
 func TestIsManagedSurgeLabel(t *testing.T) {
-	assert.True(t, isManagedSurgeLabel("surge", "surge reviewed"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge effort: medium"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge decision: changes requested"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge findings: present"))
+	assert.True(t, isManagedSurgeLabel("surge", "Surge: Reviewed"))
+	assert.True(t, isManagedSurgeLabel("surge", "Surge: Effort / Medium"))
+	assert.True(t, isManagedSurgeLabel("surge", "Surge: Decision / Changes Requested"))
+	assert.True(t, isManagedSurgeLabel("surge", "Surge: Findings / Present"))
 	assert.False(t, isManagedSurgeLabel("surge", "bug"))
 	assert.False(t, isManagedSurgeLabel("surge", "needs-review"))
 }
