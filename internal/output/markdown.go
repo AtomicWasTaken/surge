@@ -8,18 +8,27 @@ import (
 )
 
 // MarkdownOutput renders review results as GitHub-flavored markdown.
-type MarkdownOutput struct{}
+type MarkdownOutput struct {
+	commentMarker string
+}
 
 // NewMarkdownOutput creates a new markdown output renderer.
-func NewMarkdownOutput() *MarkdownOutput {
-	return &MarkdownOutput{}
+func NewMarkdownOutput(commentMarker string) *MarkdownOutput {
+	return &MarkdownOutput{
+		commentMarker: commentMarker,
+	}
 }
 
 // RenderSummary renders the full review summary as a markdown comment.
 func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	var sb strings.Builder
 
-	sb.WriteString("<!-- SURGE_SUMMARY -->\n")
+	sb.WriteString("<!-- ")
+	sb.WriteString(m.commentMarker)
+	sb.WriteString(" -->\n")
+	sb.WriteString("<!-- ")
+	sb.WriteString(m.commentMarker)
+	sb.WriteString("_SUMMARY -->\n")
 	sb.WriteString("# AI Code Review by surge\n\n")
 
 	// Header stats

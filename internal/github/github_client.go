@@ -15,16 +15,16 @@ import (
 
 // GitHubClient implements PRClient for GitHub.
 type GitHubClient struct {
-	client  *http.Client
-	apiURL  string
+	client    *http.Client
+	apiURL    string
 	authToken string
 }
 
 // NewGitHubClient creates a new GitHub API client.
 func NewGitHubClient(token string) *GitHubClient {
 	return &GitHubClient{
-		client:  &http.Client{Timeout: 30 * time.Second},
-		apiURL:  "https://api.github.com",
+		client:    &http.Client{Timeout: 30 * time.Second},
+		apiURL:    "https://api.github.com",
 		authToken: token,
 	}
 }
@@ -85,11 +85,11 @@ func (c *GitHubClient) GetPR(ctx context.Context, owner, repo string, prNumber i
 	}
 
 	var prResp struct {
-		Number       int       `json:"number"`
-		Title        string    `json:"title"`
-		Body         string    `json:"body"`
-		State        string    `json:"state"`
-		User         struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		Body   string `json:"body"`
+		State  string `json:"state"`
+		User   struct {
 			Login string `json:"login"`
 		} `json:"user"`
 		Base struct {
@@ -302,9 +302,9 @@ func (c *GitHubClient) ListComments(ctx context.Context, owner, repo string, prN
 	}
 
 	var comments []struct {
-		ID        int64  `json:"id"`
-		Body      string `json:"body"`
-		User      struct {
+		ID   int64  `json:"id"`
+		Body string `json:"body"`
+		User struct {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"user"`
@@ -340,6 +340,112 @@ func (c *GitHubClient) DeleteComment(ctx context.Context, owner, repo string, co
 
 	if status != http.StatusNoContent {
 		return fmt.Errorf("GitHub API error (%d)", status)
+	}
+
+	return nil
+}
+
+// ListReviews lists submitted reviews on a PR.
+func (c *GitHubClient) ListReviews(ctx context.Context, owner, repo string, prNumber int) ([]*model.PRReview, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews", c.apiURL, owner, repo, prNumber)
+
+	body, status, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	var reviews []struct {
+		ID   int64  `json:"id"`
+		Body string `json:"body"`
+		User struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"user"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	if err := json.Unmarshal(body, &reviews); err != nil {
+		return nil, fmt.Errorf("failed to parse reviews: %w", err)
+	}
+
+	result := make([]*model.PRReview, len(reviews))
+	for i, r := range reviews {
+		result[i] = &model.PRReview{
+			ID:        r.ID,
+			Body:      r.Body,
+			Author:    r.User.Login,
+			IsBot:     r.User.Type == "Bot",
+			CreatedAt: r.CreatedAt,
+		}
+	}
+
+	return result, nil
+}
+
+// DeleteReview deletes a review by ID.
+func (c *GitHubClient) DeleteReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews/%d", c.apiURL, owner, repo, prNumber, reviewID)
+
+	body, status, err := c.doRequest(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK && status != http.StatusNoContent {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
+
+// ListReviewComments lists inline comments for a specific PR review.
+func (c *GitHubClient) ListReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) ([]*model.PRReviewComment, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews/%d/comments", c.apiURL, owner, repo, prNumber, reviewID)
+
+	body, status, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	var comments []struct {
+		ID   int64  `json:"id"`
+		Body string `json:"body"`
+	}
+
+	if err := json.Unmarshal(body, &comments); err != nil {
+		return nil, fmt.Errorf("failed to parse review comments: %w", err)
+	}
+
+	result := make([]*model.PRReviewComment, len(comments))
+	for i, c := range comments {
+		result[i] = &model.PRReviewComment{
+			ID:   c.ID,
+			Body: c.Body,
+		}
+	}
+
+	return result, nil
+}
+
+// DeleteReviewComment deletes a PR inline review comment by ID.
+func (c *GitHubClient) DeleteReviewComment(ctx context.Context, owner, repo string, commentID int64) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/comments/%d", c.apiURL, owner, repo, commentID)
+
+	body, status, err := c.doRequest(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusNoContent {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
 	}
 
 	return nil

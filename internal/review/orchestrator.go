@@ -16,15 +16,15 @@ import (
 
 // Orchestrator coordinates the full review pipeline.
 type Orchestrator struct {
-	aiClient  ai.AIClient
-	ghClient  github.PRClient
-	prompts   *PromptBuilder
-	parser    *OutputParser
-	vibe      *VibeDetector
-	mdOut     *output.MarkdownOutput
-	stdOut    *output.TerminalOutput
-	jsonOut   *output.JSONOutput
-	cfg       *config.Config
+	aiClient      ai.AIClient
+	ghClient      github.PRClient
+	prompts       *PromptBuilder
+	parser        *OutputParser
+	vibe          *VibeDetector
+	mdOut         *output.MarkdownOutput
+	stdOut        *output.TerminalOutput
+	jsonOut       *output.JSONOutput
+	cfg           *config.Config
 	commentMarker string
 }
 
@@ -36,7 +36,7 @@ func NewOrchestrator(aiClient ai.AIClient, ghClient github.PRClient, cfg *config
 		prompts:       NewPromptBuilder(),
 		parser:        NewOutputParser(),
 		vibe:          NewVibeDetector(),
-		mdOut:         output.NewMarkdownOutput(),
+		mdOut:         output.NewMarkdownOutput(cfg.CommentMarker),
 		stdOut:        output.NewTerminalOutput(),
 		jsonOut:       output.NewJSONOutput(),
 		cfg:           cfg,
@@ -81,8 +81,8 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 	categories := o.filterCategories(systemPrompt)
 
 	aiReq := &ai.CompletionRequest{
-		Model:       o.cfg.AI.Model,
-		System:      categories,
+		Model:  o.cfg.AI.Model,
+		System: categories,
 		Messages: []ai.Message{
 			{Role: "user", Content: userPrompt},
 		},
@@ -246,14 +246,47 @@ func (o *Orchestrator) deleteOldComments(ctx context.Context, owner, repo string
 	}
 
 	for _, c := range comments {
-		if strings.Contains(c.Body, o.commentMarker) || strings.Contains(c.Body, "<!-- "+o.cfg.CommentMarker+"_") {
+		if o.isSurgeComment(c.Body) {
 			if err := o.ghClient.DeleteComment(ctx, owner, repo, c.ID); err != nil {
 				return err
 			}
 		}
 	}
 
+	reviews, err := o.ghClient.ListReviews(ctx, owner, repo, prNumber)
+	if err != nil {
+		return err
+	}
+
+	for _, r := range reviews {
+		if !o.isSurgeComment(r.Body) {
+			continue
+		}
+
+		reviewComments, err := o.ghClient.ListReviewComments(ctx, owner, repo, prNumber, r.ID)
+		if err != nil {
+			return err
+		}
+
+		for _, rc := range reviewComments {
+			if err := o.ghClient.DeleteReviewComment(ctx, owner, repo, rc.ID); err != nil {
+				return err
+			}
+		}
+
+		if err := o.ghClient.DeleteReview(ctx, owner, repo, prNumber, r.ID); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (o *Orchestrator) isSurgeComment(body string) bool {
+	legacySummaryMarker := "<!-- SURGE_SUMMARY -->"
+	return strings.Contains(body, o.commentMarker) ||
+		strings.Contains(body, "<!-- "+o.cfg.CommentMarker+"_") ||
+		strings.Contains(body, legacySummaryMarker)
 }
 
 // findPositionInPatch finds the diff position for a given file line number.
