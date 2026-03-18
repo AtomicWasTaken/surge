@@ -22,6 +22,12 @@ func NewMarkdownOutput(commentMarker string) *MarkdownOutput {
 // RenderSummary renders the full review summary as a markdown comment.
 func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	var sb strings.Builder
+	bySeverity := groupBySeverity(result.Findings)
+	findingCount := len(result.Findings)
+	decision := "✅ Approve"
+	if !result.Approve {
+		decision = "❌ Request Changes"
+	}
 
 	sb.WriteString("<!-- ")
 	sb.WriteString(m.commentMarker)
@@ -29,46 +35,41 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	sb.WriteString("<!-- ")
 	sb.WriteString(m.commentMarker)
 	sb.WriteString("_SUMMARY -->\n")
-	sb.WriteString("# AI Code Review by surge\n\n")
+	sb.WriteString("## ⚡ surge Review Summary\n\n")
+	sb.WriteString("| Decision | Findings | Files | Vibe |\n")
+	sb.WriteString("|---|---:|---:|---:|\n")
+	sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d/10 |\n\n", decision, findingCount, result.Stats.FilesReviewed, result.VibeCheck.Score))
 
-	// Header stats
-	sb.WriteString("| Files | Findings | Vibe Score | Approve |\n")
-	sb.WriteString("|-------|----------|------------|--------|\n")
+	sb.WriteString("### Severity Rollup\n\n")
+	sb.WriteString("| 🔴 Critical | 🟠 High | 🟡 Medium | 🔵 Low | ⚪ Info |\n")
+	sb.WriteString("|---:|---:|---:|---:|---:|\n")
+	sb.WriteString(fmt.Sprintf("| %d | %d | %d | %d | %d |\n\n",
+		len(bySeverity[model.SeverityCritical]),
+		len(bySeverity[model.SeverityHigh]),
+		len(bySeverity[model.SeverityMedium]),
+		len(bySeverity[model.SeverityLow]),
+		len(bySeverity[model.SeverityInfo])))
 
-	findingCount := len(result.Findings)
-	approveStr := "❌ Request Changes"
-	if result.Approve {
-		approveStr = "✅ Approve"
-	}
-
-	sb.WriteString(fmt.Sprintf("| %d | %d | %d/10 | %s |\n\n",
-		result.Stats.FilesReviewed, findingCount, result.VibeCheck.Score, approveStr))
-
-	// Separator
-	sb.WriteString("---\n\n")
-
-	// Executive Summary
-	sb.WriteString("## Executive Summary\n\n")
-	sb.WriteString("<details>\n")
-	sb.WriteString("<summary>Click to expand...</summary>\n\n")
+	sb.WriteString("### Executive Summary\n\n")
 	sb.WriteString(result.Summary)
-	sb.WriteString("\n\n</details>\n\n")
+	sb.WriteString("\n\n")
 
 	// Files Overview
 	if len(result.FilesOverview) > 0 {
-		sb.WriteString("## Files Changed Overview\n\n")
+		sb.WriteString("<details>\n")
+		sb.WriteString("<summary><strong>📁 Files Changed Overview</strong></summary>\n\n")
 		sb.WriteString("| File | Changes | Risk |\n")
-		sb.WriteString("|------|---------|------|\n")
+		sb.WriteString("|---|---|---|\n")
 		for _, f := range result.FilesOverview {
 			risk := riskEmoji(f.Risk) + " " + strings.ToUpper(f.Risk)
-			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", f.Path, f.Changes, risk))
+			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", sanitizeTableCell(f.Path), sanitizeTableCell(f.Changes), sanitizeTableCell(risk)))
 		}
-		sb.WriteString("\n")
+		sb.WriteString("\n</details>\n\n")
 	}
 
 	// Findings by Severity
 	if len(result.Findings) > 0 {
-		bySeverity := groupBySeverity(result.Findings)
+		sb.WriteString("## 🧭 Findings\n\n")
 		for _, sev := range []model.Severity{model.SeverityCritical, model.SeverityHigh, model.SeverityMedium, model.SeverityLow, model.SeverityInfo} {
 			findings := bySeverity[sev]
 			if len(findings) == 0 {
@@ -76,62 +77,50 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 			}
 			emoji := severityEmoji(sev)
 			sb.WriteString(fmt.Sprintf("### %s %s (%d)\n\n", emoji, severityLabel(sev), len(findings)))
-			sb.WriteString("<details>\n")
-			sb.WriteString("<summary>Click to expand...</summary>\n\n")
-
-			sb.WriteString("| File | Line | Title | Category |\n")
-			sb.WriteString("|------|------|-------|----------|\n")
-			for _, f := range findings {
-				line := "-"
+			for i, f := range findings {
+				location := "`" + f.File + "`"
 				if f.Line > 0 {
-					line = fmt.Sprintf("%d", f.Line)
+					location = fmt.Sprintf("`%s:%d`", f.File, f.Line)
 				}
-				sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n",
-					f.File, line, f.Title, f.Category))
-				sb.WriteString("\n")
-				sb.WriteString(fmt.Sprintf("**%s**\n\n", f.Title))
+				sb.WriteString("<details>\n")
+				sb.WriteString(fmt.Sprintf("<summary><strong>%s</strong> · %s · <code>%s</code></summary>\n\n",
+					sanitizeTableCell(f.Title), location, f.Category))
 				sb.WriteString(f.Body)
-				sb.WriteString("\n\n---\n\n")
+				sb.WriteString("\n\n</details>\n\n")
+				if i != len(findings)-1 {
+					sb.WriteString("---\n\n")
+				}
 			}
-
-			sb.WriteString("</details>\n\n")
 		}
+	} else {
+		sb.WriteString("## 🧭 Findings\n\n")
+		sb.WriteString("No actionable findings were reported.\n\n")
 	}
 
 	// Vibe Check
-	sb.WriteString("## Vibe Check\n\n")
-	sb.WriteString("<details>\n")
-	sb.WriteString("<summary>")
-	sb.WriteString(fmt.Sprintf("Score: %d/10", result.VibeCheck.Score))
-	sb.WriteString("</summary>\n\n")
-	sb.WriteString("**Score: ")
-	sb.WriteString(fmt.Sprintf("%d/10", result.VibeCheck.Score))
-	sb.WriteString("** -- ")
-	sb.WriteString(result.VibeCheck.Verdict)
-	sb.WriteString("\n\n")
+	sb.WriteString("## 🎯 Vibe Check\n\n")
+	sb.WriteString(fmt.Sprintf("**Score:** %d/10 %s\n\n", result.VibeCheck.Score, vibeBar(result.VibeCheck.Score)))
+	sb.WriteString(fmt.Sprintf("**Verdict:** %s\n\n", result.VibeCheck.Verdict))
 	if len(result.VibeCheck.Flags) > 0 {
-		sb.WriteString("Flags:\n")
+		sb.WriteString("**Flags**\n")
 		for _, flag := range result.VibeCheck.Flags {
 			sb.WriteString(fmt.Sprintf("- `%s`\n", flag))
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString("</details>\n\n")
 
 	// Recommendations
 	if len(result.Recommendations) > 0 {
-		sb.WriteString("## Recommendations\n\n")
-		sb.WriteString("<details>\n")
-		sb.WriteString("<summary>Click to expand...</summary>\n\n")
-		for i, rec := range result.Recommendations {
-			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, rec))
+		sb.WriteString("## ✅ Recommended Next Steps\n\n")
+		for _, rec := range result.Recommendations {
+			sb.WriteString(fmt.Sprintf("- [ ] %s\n", rec))
 		}
-		sb.WriteString("\n</details>\n\n")
+		sb.WriteString("\n")
 	}
 
 	// Footer
 	sb.WriteString("---\n\n")
-	sb.WriteString("*Generated by [surge](https://github.com/AtomicWasTaken/surge) -- AI-powered PR reviews.*\n")
+	sb.WriteString("> Generated by [surge](https://github.com/AtomicWasTaken/surge) · AI-powered PR reviews\n")
 
 	return sb.String()
 }
@@ -183,4 +172,21 @@ func groupBySeverity(findings []model.Finding) map[model.Severity][]model.Findin
 		result[f.Severity] = append(result[f.Severity], f)
 	}
 	return result
+}
+
+func sanitizeTableCell(v string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(v, "|", "\\|"), "\n", "<br>")
+}
+
+func vibeBar(score int) string {
+	if score < 0 {
+		score = 0
+	}
+	if score > 10 {
+		score = 10
+	}
+
+	filled := score
+	empty := 10 - filled
+	return strings.Repeat("█", filled) + strings.Repeat("░", empty)
 }
