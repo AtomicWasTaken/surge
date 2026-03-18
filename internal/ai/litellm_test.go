@@ -72,3 +72,41 @@ func TestLiteLLMClientCompleteUsesResponsesForCodexModels(t *testing.T) {
 	assert.Equal(t, 5, resp.TokensIn)
 	assert.Equal(t, 1, resp.TokensOut)
 }
+
+func TestLiteLLMClientCompleteFallsBackToChatCompletions(t *testing.T) {
+	hits := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits[r.URL.Path]++
+
+		switch r.URL.Path {
+		case "/v1/responses":
+			w.WriteHeader(http.StatusBadRequest)
+			_, err := fmt.Fprint(w, `{"detail":"Unsupported parameter: max_output_tokens"}`)
+			require.NoError(t, err)
+		case "/v1/chat/completions":
+			w.WriteHeader(http.StatusOK)
+			_, err := fmt.Fprint(w, `{
+				"choices":[{"message":{"content":"fallback-ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":9,"completion_tokens":3},
+				"model":"gpt-5.1-codex"
+			}`)
+			require.NoError(t, err)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewLiteLLMClient(server.URL, "test-key", "gpt-5.1-codex")
+	client.client = server.Client()
+
+	resp, err := client.Complete(context.Background(), &CompletionRequest{
+		Model:     "gpt-5.1-codex",
+		Messages:  []Message{{Role: "user", Content: "say hi"}},
+		MaxTokens: 64,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "fallback-ok", resp.Content)
+	assert.Equal(t, 1, hits["/v1/responses"])
+	assert.Equal(t, 1, hits["/v1/chat/completions"])
+}

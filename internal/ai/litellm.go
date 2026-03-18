@@ -33,9 +33,20 @@ func NewLiteLLMClient(baseURL, apiKey, model string) *LiteLLMClient {
 // Complete sends a completion request to the litellm proxy.
 func (c *LiteLLMClient) Complete(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
 	if useResponsesAPI(req.Model) {
-		return c.completeResponses(ctx, req)
+		resp, err := c.completeResponses(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		if req.Debug {
+			fmt.Fprintf(os.Stderr, "[debug] litellm responses failed; retrying with chat/completions fallback: %v\n", err)
+		}
+		return c.completeChatCompletions(ctx, req)
 	}
 
+	return c.completeChatCompletions(ctx, req)
+}
+
+func (c *LiteLLMClient) completeChatCompletions(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
 	url := c.baseURL + "/v1/chat/completions"
 	if req.Debug {
 		fmt.Fprintf(os.Stderr, "[debug] litellm request url=%s model=%s max_tokens=%d temperature=%.2f messages=%d\n",
@@ -126,16 +137,16 @@ func (c *LiteLLMClient) Complete(ctx context.Context, req *CompletionRequest) (*
 func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
 	url := c.baseURL + "/v1/responses"
 	if req.Debug {
-		fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s max_output_tokens=%d temperature=%.2f\n",
+		fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s max_tokens=%d temperature=%.2f\n",
 			url, req.Model, req.MaxTokens, req.Temperature)
 	}
 
 	payload := map[string]interface{}{
-		"model":             req.Model,
-		"instructions":      req.System,
-		"input":             responsesInputFromMessages(req.Messages),
-		"max_output_tokens": req.MaxTokens,
-		"stream":            true,
+		"model":        req.Model,
+		"instructions": req.System,
+		"input":        responsesInputFromMessages(req.Messages),
+		"max_tokens":   req.MaxTokens,
+		"stream":       true,
 	}
 	if req.Temperature > 0 {
 		payload["temperature"] = req.Temperature
