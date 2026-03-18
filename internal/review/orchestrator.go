@@ -171,9 +171,6 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		fmt.Printf("Warning: failed to delete old comments: %v\n", err)
 	}
 
-	// Build the summary body
-	body := o.mdOut.RenderSummary(result)
-
 	// Build inline comments
 	var comments []model.ReviewComment
 	if !o.cfg.DisableInlineComments {
@@ -183,21 +180,30 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		}
 	}
 
-	// Determine review event
-	event := "COMMENT"
-	if result.Approve {
-		event = "APPROVE"
+	// Post summary as an issue comment so reruns can replace it cleanly.
+	// GitHub does not allow deleting submitted PR reviews via API.
+	if !o.cfg.DisableSummaryComment {
+		body := o.mdOut.RenderSummary(result)
+		if err := o.ghClient.PostComment(ctx, owner, repo, prNumber, body); err != nil {
+			return err
+		}
 	}
 
-	// Post the review
-	reviewInput := &model.ReviewInput{
-		Body:     body,
-		Event:    event,
-		Comments: comments,
-	}
+	// Post inline comments as a review only when needed.
+	if len(comments) > 0 {
+		event := "COMMENT"
+		if result.Approve {
+			event = "APPROVE"
+		}
 
-	if err := o.ghClient.PostReview(ctx, owner, repo, prNumber, reviewInput); err != nil {
-		return err
+		reviewInput := &model.ReviewInput{
+			Body:     "<!-- " + o.cfg.CommentMarker + "_INLINE -->",
+			Event:    event,
+			Comments: comments,
+		}
+		if err := o.ghClient.PostReview(ctx, owner, repo, prNumber, reviewInput); err != nil {
+			return err
+		}
 	}
 
 	if err := o.syncPRLabels(ctx, owner, repo, prNumber, result); err != nil {
@@ -277,10 +283,6 @@ func (o *Orchestrator) deleteOldComments(ctx context.Context, owner, repo string
 				return err
 			}
 		}
-
-		if err := o.ghClient.DeleteReview(ctx, owner, repo, prNumber, r.ID); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -354,29 +356,29 @@ func (o *Orchestrator) syncPRLabels(ctx context.Context, owner, repo string, prN
 }
 
 func buildSurgeLabels(prefix string, result *model.ReviewResult) []string {
-	decision := "changes"
+	decision := "changes requested"
 	if result.Approve {
-		decision = "approve"
+		decision = "approved"
 	}
 
 	findings := "present"
 	if len(result.Findings) == 0 {
-		findings = "none"
+		findings = "none found"
 	}
 
 	return []string{
-		prefix + ":reviewed",
-		prefix + ":review-effort:" + classifyReviewEffort(result),
-		prefix + ":decision:" + decision,
-		prefix + ":findings:" + findings,
+		prefix + " reviewed",
+		prefix + " effort: " + classifyReviewEffort(result),
+		prefix + " decision: " + decision,
+		prefix + " findings: " + findings,
 	}
 }
 
 func isManagedSurgeLabel(prefix, label string) bool {
-	return label == prefix+":reviewed" ||
-		strings.HasPrefix(label, prefix+":review-effort:") ||
-		strings.HasPrefix(label, prefix+":decision:") ||
-		strings.HasPrefix(label, prefix+":findings:")
+	return label == prefix+" reviewed" ||
+		strings.HasPrefix(label, prefix+" effort: ") ||
+		strings.HasPrefix(label, prefix+" decision: ") ||
+		strings.HasPrefix(label, prefix+" findings: ")
 }
 
 func classifyReviewEffort(result *model.ReviewResult) string {

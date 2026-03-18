@@ -35,18 +35,18 @@ func TestBuildSurgeLabels(t *testing.T) {
 	})
 
 	assert.Equal(t, []string{
-		"surge:reviewed",
-		"surge:review-effort:low",
-		"surge:decision:approve",
-		"surge:findings:none",
+		"surge reviewed",
+		"surge effort: low",
+		"surge decision: approved",
+		"surge findings: none found",
 	}, labels)
 }
 
 func TestIsManagedSurgeLabel(t *testing.T) {
-	assert.True(t, isManagedSurgeLabel("surge", "surge:reviewed"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge:review-effort:medium"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge:decision:changes"))
-	assert.True(t, isManagedSurgeLabel("surge", "surge:findings:present"))
+	assert.True(t, isManagedSurgeLabel("surge", "surge reviewed"))
+	assert.True(t, isManagedSurgeLabel("surge", "surge effort: medium"))
+	assert.True(t, isManagedSurgeLabel("surge", "surge decision: changes requested"))
+	assert.True(t, isManagedSurgeLabel("surge", "surge findings: present"))
 	assert.False(t, isManagedSurgeLabel("surge", "bug"))
 	assert.False(t, isManagedSurgeLabel("surge", "needs-review"))
 }
