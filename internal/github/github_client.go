@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/AtomicWasTaken/surge/internal/model"
@@ -445,6 +446,111 @@ func (c *GitHubClient) DeleteReviewComment(ctx context.Context, owner, repo stri
 	}
 
 	if status != http.StatusNoContent {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
+
+// ListLabels lists labels on a PR (issues API).
+func (c *GitHubClient) ListLabels(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels", c.apiURL, owner, repo, prNumber)
+
+	body, status, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	var labels []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &labels); err != nil {
+		return nil, fmt.Errorf("failed to parse labels: %w", err)
+	}
+
+	result := make([]string, 0, len(labels))
+	for _, l := range labels {
+		if l.Name == "" {
+			continue
+		}
+		result = append(result, l.Name)
+	}
+
+	return result, nil
+}
+
+// AddLabels adds labels to a PR (issues API).
+func (c *GitHubClient) AddLabels(ctx context.Context, owner, repo string, prNumber int, labels []string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels", c.apiURL, owner, repo, prNumber)
+	payload := map[string][]string{
+		"labels": labels,
+	}
+
+	body, status, err := c.doRequest(ctx, http.MethodPost, url, payload)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK && status != http.StatusCreated {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
+
+// RemoveLabel removes a single label from a PR (issues API).
+func (c *GitHubClient) RemoveLabel(ctx context.Context, owner, repo string, prNumber int, label string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/labels/%s", c.apiURL, owner, repo, prNumber, url.PathEscape(label))
+
+	body, status, err := c.doRequest(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK && status != http.StatusNoContent && status != http.StatusNotFound {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
+
+// UpsertLabel creates or updates a repository label definition.
+func (c *GitHubClient) UpsertLabel(ctx context.Context, owner, repo, name, color, description string) error {
+	createURL := fmt.Sprintf("%s/repos/%s/%s/labels", c.apiURL, owner, repo)
+	payload := map[string]string{
+		"name":        name,
+		"color":       color,
+		"description": description,
+	}
+
+	body, status, err := c.doRequest(ctx, http.MethodPost, createURL, payload)
+	if err != nil {
+		return err
+	}
+
+	if status == http.StatusCreated {
+		return nil
+	}
+
+	if status != http.StatusUnprocessableEntity {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	updateURL := fmt.Sprintf("%s/repos/%s/%s/labels/%s", c.apiURL, owner, repo, url.PathEscape(name))
+	body, status, err = c.doRequest(ctx, http.MethodPatch, updateURL, payload)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK {
 		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
 	}
 

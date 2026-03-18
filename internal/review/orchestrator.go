@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/AtomicWasTaken/surge/internal/ai"
 	"github.com/AtomicWasTaken/surge/internal/config"
@@ -171,9 +173,6 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		fmt.Printf("Warning: failed to delete old comments: %v\n", err)
 	}
 
-	// Build the summary body
-	body := o.mdOut.RenderSummary(result)
-
 	// Build inline comments
 	var comments []model.ReviewComment
 	if !o.cfg.DisableInlineComments {
@@ -183,21 +182,34 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		}
 	}
 
-	// Determine review event
-	event := "COMMENT"
-	if result.Approve {
-		event = "APPROVE"
+	// Post summary as an issue comment so reruns can replace it cleanly.
+	// GitHub does not allow deleting submitted PR reviews via API.
+	if !o.cfg.DisableSummaryComment {
+		body := o.mdOut.RenderSummary(result)
+		if err := o.ghClient.PostComment(ctx, owner, repo, prNumber, body); err != nil {
+			return err
+		}
 	}
 
-	// Post the review
-	reviewInput := &model.ReviewInput{
-		Body:     body,
-		Event:    event,
-		Comments: comments,
+	// Post inline comments as a review only when needed.
+	if len(comments) > 0 {
+		event := "COMMENT"
+		if result.Approve {
+			event = "APPROVE"
+		}
+
+		reviewInput := &model.ReviewInput{
+			Body:     "<!-- " + o.cfg.CommentMarker + "_INLINE -->",
+			Event:    event,
+			Comments: comments,
+		}
+		if err := o.ghClient.PostReview(ctx, owner, repo, prNumber, reviewInput); err != nil {
+			return err
+		}
 	}
 
-	if err := o.ghClient.PostReview(ctx, owner, repo, prNumber, reviewInput); err != nil {
-		return err
+	if err := o.syncPRLabels(ctx, owner, repo, prNumber, result); err != nil {
+		fmt.Printf("Warning: failed to sync PR labels: %v\n", err)
 	}
 
 	return nil
@@ -273,10 +285,6 @@ func (o *Orchestrator) deleteOldComments(ctx context.Context, owner, repo string
 				return err
 			}
 		}
-
-		if err := o.ghClient.DeleteReview(ctx, owner, repo, prNumber, r.ID); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -311,4 +319,189 @@ func findPositionInPatch(patch string, targetLine int) int {
 	}
 
 	return 0
+}
+
+func (o *Orchestrator) syncPRLabels(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult) error {
+	if !o.cfg.EnablePRLabels {
+		return nil
+	}
+
+	prefix := strings.TrimSpace(o.cfg.PRLabelPrefix)
+	if prefix == "" {
+		prefix = "surge"
+	}
+
+	labelSpecs := buildSurgeLabelSpecs(prefix, result)
+	desired := make([]string, 0, len(labelSpecs))
+	for _, spec := range labelSpecs {
+		if err := o.ghClient.UpsertLabel(ctx, owner, repo, spec.Name, spec.Color, spec.Description); err != nil {
+			return err
+		}
+		desired = append(desired, spec.Name)
+	}
+
+	desiredSet := make(map[string]struct{}, len(desired))
+	for _, l := range desired {
+		desiredSet[l] = struct{}{}
+	}
+
+	existing, err := o.ghClient.ListLabels(ctx, owner, repo, prNumber)
+	if err != nil {
+		return err
+	}
+
+	for _, label := range existing {
+		if !isManagedSurgeLabel(prefix, label) {
+			continue
+		}
+		if _, keep := desiredSet[label]; keep {
+			continue
+		}
+		if err := o.ghClient.RemoveLabel(ctx, owner, repo, prNumber, label); err != nil {
+			return err
+		}
+	}
+
+	return o.ghClient.AddLabels(ctx, owner, repo, prNumber, desired)
+}
+
+type labelSpec struct {
+	Name        string
+	Color       string
+	Description string
+}
+
+func buildSurgeLabelSpecs(prefix string, result *model.ReviewResult) []labelSpec {
+	decision := "changes requested"
+	if result.Approve {
+		decision = "approved"
+	}
+
+	findings := "present"
+	if len(result.Findings) == 0 {
+		findings = "none found"
+	}
+
+	effort := classifyReviewEffort(result)
+
+	return []labelSpec{
+		{
+			Name:        labelName(prefix, "Reviewed"),
+			Color:       "1f6feb",
+			Description: "PR has been reviewed by surge",
+		},
+		{
+			Name:        labelName(prefix, "Effort / "+titleWord(effort)),
+			Color:       reviewEffortColor(effort),
+			Description: "Estimated review effort from surge analysis",
+		},
+		{
+			Name:        labelName(prefix, "Decision / "+decisionTitle(decision)),
+			Color:       decisionColor(decision),
+			Description: "Review decision from surge",
+		},
+		{
+			Name:        labelName(prefix, "Findings / "+findingsTitle(findings)),
+			Color:       findingsColor(findings),
+			Description: "Whether surge reported actionable findings",
+		},
+	}
+}
+
+func isManagedSurgeLabel(prefix, label string) bool {
+	base := titleWord(prefix)
+	return label == base+": Reviewed" ||
+		strings.HasPrefix(label, base+": Effort / ") ||
+		strings.HasPrefix(label, base+": Decision / ") ||
+		strings.HasPrefix(label, base+": Findings / ")
+}
+
+func classifyReviewEffort(result *model.ReviewResult) string {
+	critical := 0
+	high := 0
+	medium := 0
+	for _, f := range result.Findings {
+		switch f.Severity {
+		case model.SeverityCritical:
+			critical++
+		case model.SeverityHigh:
+			high++
+		case model.SeverityMedium:
+			medium++
+		}
+	}
+
+	files := result.Stats.FilesReviewed
+	findings := len(result.Findings)
+
+	if files >= 20 || critical > 0 || high >= 2 || findings >= 12 {
+		return "high"
+	}
+	if files >= 8 || high > 0 || medium >= 2 || findings >= 5 {
+		return "medium"
+	}
+	return "low"
+}
+
+func reviewEffortColor(effort string) string {
+	switch effort {
+	case "high":
+		return "b60205"
+	case "medium":
+		return "fbca04"
+	default:
+		return "2da44e"
+	}
+}
+
+func decisionColor(decision string) string {
+	switch decision {
+	case "approved":
+		return "2da44e"
+	default:
+		return "d73a4a"
+	}
+}
+
+func findingsColor(findings string) string {
+	switch findings {
+	case "none found":
+		return "2da44e"
+	default:
+		return "fb8500"
+	}
+}
+
+func labelName(prefix, suffix string) string {
+	return titleWord(prefix) + ": " + suffix
+}
+
+func decisionTitle(decision string) string {
+	switch decision {
+	case "approved":
+		return "Approved"
+	default:
+		return "Changes Requested"
+	}
+}
+
+func findingsTitle(findings string) string {
+	switch findings {
+	case "none found":
+		return "None"
+	default:
+		return "Present"
+	}
+}
+
+func titleWord(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
