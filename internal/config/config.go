@@ -11,12 +11,12 @@ import (
 
 // Config represents the full surge configuration.
 type Config struct {
-	AI           AIConfig          `mapstructure:"ai"`
-	ContextDepth string            `mapstructure:"contextDepth"`
-	Output       OutputConfig      `mapstructure:"output"`
-	Categories   CategoriesConfig  `mapstructure:"categories"`
-	GitHub       GitHubConfig      `mapstructure:"github"`
-	Verbose      bool              `mapstructure:"verbose"`
+	AI           AIConfig         `mapstructure:"ai"`
+	ContextDepth string           `mapstructure:"contextDepth"`
+	Output       OutputConfig     `mapstructure:"output"`
+	Categories   CategoriesConfig `mapstructure:"categories"`
+	GitHub       GitHubConfig     `mapstructure:"github"`
+	Verbose      bool             `mapstructure:"verbose"`
 
 	// Inline comment settings
 	MaxInlineComments     int  `mapstructure:"maxInlineComments"`
@@ -30,18 +30,22 @@ type Config struct {
 	// Filtering
 	ExcludePaths []string `mapstructure:"excludePaths"`
 	IncludePaths []string `mapstructure:"includePaths"`
-	MinSeverity string   `mapstructure:"minSeverity"`
+	MinSeverity  string   `mapstructure:"minSeverity"`
 
 	// Comment marker
 	CommentMarker string `mapstructure:"commentMarker"`
+
+	// PR labeling
+	EnablePRLabels bool   `mapstructure:"enablePRLabels"`
+	PRLabelPrefix  string `mapstructure:"prLabelPrefix"`
 }
 
 // AIConfig configures the AI provider.
 type AIConfig struct {
 	Provider string `mapstructure:"provider"` // "litellm" or "claude"
-	Model   string `mapstructure:"model"`
-	BaseURL string `mapstructure:"baseUrl"`
-	APIKey  string `mapstructure:"apiKey"`
+	Model    string `mapstructure:"model"`
+	BaseURL  string `mapstructure:"baseUrl"`
+	APIKey   string `mapstructure:"apiKey"`
 }
 
 // OutputConfig configures output formatting.
@@ -62,7 +66,7 @@ type CategoriesConfig struct {
 
 // GitHubConfig holds GitHub-specific settings.
 type GitHubConfig struct {
-	Token    string `mapstructure:"token"`    // Loaded from env
+	Token    string `mapstructure:"token"` // Loaded from env
 	Owner    string `mapstructure:"owner"`
 	Repo     string `mapstructure:"repo"`
 	PRNumber int    `mapstructure:"prNumber"`
@@ -109,6 +113,8 @@ func Load(configPath string) (*Config, error) {
 	_ = v.BindEnv("verbose", "SURGE_VERBOSE")
 	_ = v.BindEnv("noInline", "SURGE_NO_INLINE")
 	_ = v.BindEnv("noSummary", "SURGE_NO_SUMMARY")
+	_ = v.BindEnv("enablePRLabels", "SURGE_ENABLE_PR_LABELS")
+	_ = v.BindEnv("prLabelPrefix", "SURGE_PR_LABEL_PREFIX")
 
 	// Read config file if it exists
 	if err := v.ReadInConfig(); err != nil {
@@ -172,6 +178,10 @@ func applyDefaults(v *viper.Viper) {
 
 	// Comment marker
 	v.SetDefault("commentMarker", "SURGE")
+
+	// PR labels
+	v.SetDefault("enablePRLabels", true)
+	v.SetDefault("prLabelPrefix", "surge")
 }
 
 func (c *Config) expandEnvVars() {

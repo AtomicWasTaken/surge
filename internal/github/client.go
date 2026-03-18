@@ -20,4 +20,7 @@ type PRClient interface {
 	DeleteReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64) error
 	ListReviewComments(ctx context.Context, owner, repo string, prNumber int, reviewID int64) ([]*model.PRReviewComment, error)
 	DeleteReviewComment(ctx context.Context, owner, repo string, commentID int64) error
+	ListLabels(ctx context.Context, owner, repo string, prNumber int) ([]string, error)
+	AddLabels(ctx context.Context, owner, repo string, prNumber int, labels []string) error
+	RemoveLabel(ctx context.Context, owner, repo string, prNumber int, label string) error
 }

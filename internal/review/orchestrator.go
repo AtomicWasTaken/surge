@@ -200,6 +200,10 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		return err
 	}
 
+	if err := o.syncPRLabels(ctx, owner, repo, prNumber, result); err != nil {
+		fmt.Printf("Warning: failed to sync PR labels: %v\n", err)
+	}
+
 	return nil
 }
 
@@ -311,4 +315,93 @@ func findPositionInPatch(patch string, targetLine int) int {
 	}
 
 	return 0
+}
+
+func (o *Orchestrator) syncPRLabels(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult) error {
+	if !o.cfg.EnablePRLabels {
+		return nil
+	}
+
+	prefix := strings.TrimSpace(o.cfg.PRLabelPrefix)
+	if prefix == "" {
+		prefix = "surge"
+	}
+
+	desired := buildSurgeLabels(prefix, result)
+	desiredSet := make(map[string]struct{}, len(desired))
+	for _, l := range desired {
+		desiredSet[l] = struct{}{}
+	}
+
+	existing, err := o.ghClient.ListLabels(ctx, owner, repo, prNumber)
+	if err != nil {
+		return err
+	}
+
+	for _, label := range existing {
+		if !isManagedSurgeLabel(prefix, label) {
+			continue
+		}
+		if _, keep := desiredSet[label]; keep {
+			continue
+		}
+		if err := o.ghClient.RemoveLabel(ctx, owner, repo, prNumber, label); err != nil {
+			return err
+		}
+	}
+
+	return o.ghClient.AddLabels(ctx, owner, repo, prNumber, desired)
+}
+
+func buildSurgeLabels(prefix string, result *model.ReviewResult) []string {
+	decision := "changes"
+	if result.Approve {
+		decision = "approve"
+	}
+
+	findings := "present"
+	if len(result.Findings) == 0 {
+		findings = "none"
+	}
+
+	return []string{
+		prefix + ":reviewed",
+		prefix + ":review-effort:" + classifyReviewEffort(result),
+		prefix + ":decision:" + decision,
+		prefix + ":findings:" + findings,
+	}
+}
+
+func isManagedSurgeLabel(prefix, label string) bool {
+	return label == prefix+":reviewed" ||
+		strings.HasPrefix(label, prefix+":review-effort:") ||
+		strings.HasPrefix(label, prefix+":decision:") ||
+		strings.HasPrefix(label, prefix+":findings:")
+}
+
+func classifyReviewEffort(result *model.ReviewResult) string {
+	critical := 0
+	high := 0
+	medium := 0
+	for _, f := range result.Findings {
+		switch f.Severity {
+		case model.SeverityCritical:
+			critical++
+		case model.SeverityHigh:
+			high++
+		case model.SeverityMedium:
+			medium++
+		}
+	}
+
+	files := result.Stats.FilesReviewed
+	findings := len(result.Findings)
+
+	if files >= 20 || critical > 0 || high >= 2 || findings >= 12 {
+		return "high"
+	}
+	if files >= 8 || high > 0 || medium >= 2 || findings >= 5 {
+		return "medium"
+	}
+	return "low"
 }
