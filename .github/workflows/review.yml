@@ -3,8 +3,6 @@ name: AI Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  push:
-    branches: [main]
 
 jobs:
   review:
@@ -21,17 +19,7 @@ jobs:
         run: go install github.com/AtomicWasTaken/surge/cmd/surge@latest
 
       - name: Run review
-        if: github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SURGE_AI_API_KEY: ${{ secrets.SURGE_AI_API_KEY }}
-        run: |
-          surge review --pr ${{ github.event.pull_request.number }} --dry-run
-
-      - name: Post review to PR
-        if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SURGE_AI_API_KEY: ${{ secrets.SURGE_AI_API_KEY }}
-        run: |
-          surge review --pr ${{ github.event.pull_request.number }}
+        run: surge review --pr ${{ github.event.pull_request.number }}
