@@ -33,19 +33,18 @@ func (c *ClaudeClient) Complete(ctx context.Context, req *CompletionRequest) (*C
 	url := c.baseURL + "/messages"
 
 	// Build messages in Anthropic format
-	messages := make([]map[string]string, 0, len(req.Messages)+1)
-	if req.System != "" {
-		// Anthropic uses a system role
-		messages = append(messages, map[string]string{"role": "user", "content": req.System})
-	}
+	messages := make([]map[string]string, 0, len(req.Messages))
 	for _, m := range req.Messages {
 		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
 	}
 
 	payload := map[string]interface{}{
-		"model":    c.model,
-		"messages":  messages,
+		"model":      c.model,
+		"messages":   messages,
 		"max_tokens": req.MaxTokens,
+	}
+	if req.System != "" {
+		payload["system"] = req.System
 	}
 
 	if req.Temperature > 0 {
@@ -65,7 +64,6 @@ func (c *ClaudeClient) Complete(ctx context.Context, req *CompletionRequest) (*C
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
-	httpReq.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
