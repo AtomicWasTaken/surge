@@ -151,13 +151,22 @@ func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRe
 
 	for _, url := range urls {
 		for _, tokenField := range tokenFields {
+			includeTemperatureOptions := []bool{true}
+			if req.Temperature > 0 {
+				includeTemperatureOptions = []bool{true, false}
+			}
+			for _, includeTemperature := range includeTemperatureOptions {
 			debugTokenField := tokenField
 			if debugTokenField == "" {
 				debugTokenField = "<none>"
 			}
 			if req.Debug {
-				fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s token_field=%s max_tokens=%d temperature=%.2f\n",
-					url, req.Model, debugTokenField, req.MaxTokens, req.Temperature)
+				tempLabel := "<none>"
+				if includeTemperature {
+					tempLabel = fmt.Sprintf("%.2f", req.Temperature)
+				}
+				fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s token_field=%s max_tokens=%d temperature=%s\n",
+					url, req.Model, debugTokenField, req.MaxTokens, tempLabel)
 			}
 
 			payload := map[string]interface{}{
@@ -169,7 +178,7 @@ func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRe
 			if tokenField != "" {
 				payload[tokenField] = req.MaxTokens
 			}
-			if req.Temperature > 0 {
+			if includeTemperature && req.Temperature > 0 {
 				payload["temperature"] = req.Temperature
 			}
 
@@ -204,13 +213,14 @@ func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRe
 			}
 			if status == http.StatusBadRequest && isUnsupportedParameter(respBody) {
 				lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
-				continue // try next token field
+				continue // try next payload variant
 			}
 			if status >= http.StatusInternalServerError {
 				lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
 				break // try next URL variant
 			}
 			return nil, fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
+		}
 		}
 	}
 
