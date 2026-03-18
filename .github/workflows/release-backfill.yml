@@ -40,4 +40,10 @@ jobs:
       - name: Upload artifacts to existing release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.tag }}" dist/* --clobber
+        run: |
+          mapfile -t assets < <(find dist -maxdepth 1 -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" \) | sort)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No archive assets found in dist/"
+            exit 1
+          fi
+          gh release upload "${{ inputs.tag }}" "${assets[@]}" --clobber
