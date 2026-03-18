@@ -1,0 +1,57 @@
+projectName: surge
+before:
+  hooks:
+    - go mod download
+builds:
+  - id: surge
+    binary: surge
+    main: ./cmd/surge
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^CI'
+brews:
+  - name: surge
+    tap:
+      owner: AtomicWasTaken
+      name: homebrew-tap
+    commit_msg_template: 'Brew formula update for {{ .ProjectName }} v{{ .Version }}'
+    description: AI-powered PR code review tool
+    homepage: https://github.com/AtomicWasTaken/surge
+    license: MIT
+    install: |
+      bin.install "surge"
+      generate_completions
