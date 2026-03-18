@@ -146,22 +146,28 @@ func parseChatCompletionsResponse(respBody []byte) (*CompletionResponse, error) 
 
 func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
 	urls := candidateResponsesURLs(c.baseURL)
-	tokenFields := []string{"max_output_tokens", "max_tokens", "max_completion_tokens"}
+	tokenFields := []string{"max_output_tokens", "max_tokens", "max_completion_tokens", ""}
 	var lastErr error
 
 	for _, url := range urls {
 		for _, tokenField := range tokenFields {
+			debugTokenField := tokenField
+			if debugTokenField == "" {
+				debugTokenField = "<none>"
+			}
 			if req.Debug {
 				fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s token_field=%s max_tokens=%d temperature=%.2f\n",
-					url, req.Model, tokenField, req.MaxTokens, req.Temperature)
+					url, req.Model, debugTokenField, req.MaxTokens, req.Temperature)
 			}
 
 			payload := map[string]interface{}{
 				"model":        req.Model,
 				"instructions": req.System,
 				"input":        responsesInputFromMessages(req.Messages),
-				tokenField:     req.MaxTokens,
 				"stream":       true,
+			}
+			if tokenField != "" {
+				payload[tokenField] = req.MaxTokens
 			}
 			if req.Temperature > 0 {
 				payload["temperature"] = req.Temperature
