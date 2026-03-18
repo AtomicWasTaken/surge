@@ -329,7 +329,15 @@ func (o *Orchestrator) syncPRLabels(ctx context.Context, owner, repo string, prN
 		prefix = "surge"
 	}
 
-	desired := buildSurgeLabels(prefix, result)
+	labelSpecs := buildSurgeLabelSpecs(prefix, result)
+	desired := make([]string, 0, len(labelSpecs))
+	for _, spec := range labelSpecs {
+		if err := o.ghClient.UpsertLabel(ctx, owner, repo, spec.Name, spec.Color, spec.Description); err != nil {
+			return err
+		}
+		desired = append(desired, spec.Name)
+	}
+
 	desiredSet := make(map[string]struct{}, len(desired))
 	for _, l := range desired {
 		desiredSet[l] = struct{}{}
@@ -355,7 +363,13 @@ func (o *Orchestrator) syncPRLabels(ctx context.Context, owner, repo string, prN
 	return o.ghClient.AddLabels(ctx, owner, repo, prNumber, desired)
 }
 
-func buildSurgeLabels(prefix string, result *model.ReviewResult) []string {
+type labelSpec struct {
+	Name        string
+	Color       string
+	Description string
+}
+
+func buildSurgeLabelSpecs(prefix string, result *model.ReviewResult) []labelSpec {
 	decision := "changes requested"
 	if result.Approve {
 		decision = "approved"
@@ -366,11 +380,29 @@ func buildSurgeLabels(prefix string, result *model.ReviewResult) []string {
 		findings = "none found"
 	}
 
-	return []string{
-		prefix + " reviewed",
-		prefix + " effort: " + classifyReviewEffort(result),
-		prefix + " decision: " + decision,
-		prefix + " findings: " + findings,
+	effort := classifyReviewEffort(result)
+
+	return []labelSpec{
+		{
+			Name:        prefix + " reviewed",
+			Color:       "1f6feb",
+			Description: "PR has been reviewed by surge",
+		},
+		{
+			Name:        prefix + " effort: " + effort,
+			Color:       reviewEffortColor(effort),
+			Description: "Estimated review effort from surge analysis",
+		},
+		{
+			Name:        prefix + " decision: " + decision,
+			Color:       decisionColor(decision),
+			Description: "Review decision from surge",
+		},
+		{
+			Name:        prefix + " findings: " + findings,
+			Color:       findingsColor(findings),
+			Description: "Whether surge reported actionable findings",
+		},
 	}
 }
 
@@ -406,4 +438,33 @@ func classifyReviewEffort(result *model.ReviewResult) string {
 		return "medium"
 	}
 	return "low"
+}
+
+func reviewEffortColor(effort string) string {
+	switch effort {
+	case "high":
+		return "b60205"
+	case "medium":
+		return "fbca04"
+	default:
+		return "2da44e"
+	}
+}
+
+func decisionColor(decision string) string {
+	switch decision {
+	case "approved":
+		return "2da44e"
+	default:
+		return "d73a4a"
+	}
+}
+
+func findingsColor(findings string) string {
+	switch findings {
+	case "none found":
+		return "2da44e"
+	default:
+		return "fb8500"
+	}
 }

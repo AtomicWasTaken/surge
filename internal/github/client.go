@@ -23,4 +23,5 @@ type PRClient interface {
 	ListLabels(ctx context.Context, owner, repo string, prNumber int) ([]string, error)
 	AddLabels(ctx context.Context, owner, repo string, prNumber int, labels []string) error
 	RemoveLabel(ctx context.Context, owner, repo string, prNumber int, label string) error
+	UpsertLabel(ctx context.Context, owner, repo, name, color, description string) error
 }

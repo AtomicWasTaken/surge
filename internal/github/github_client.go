@@ -521,3 +521,38 @@ func (c *GitHubClient) RemoveLabel(ctx context.Context, owner, repo string, prNu
 
 	return nil
 }
+
+// UpsertLabel creates or updates a repository label definition.
+func (c *GitHubClient) UpsertLabel(ctx context.Context, owner, repo, name, color, description string) error {
+	createURL := fmt.Sprintf("%s/repos/%s/%s/labels", c.apiURL, owner, repo)
+	payload := map[string]string{
+		"name":        name,
+		"color":       color,
+		"description": description,
+	}
+
+	body, status, err := c.doRequest(ctx, http.MethodPost, createURL, payload)
+	if err != nil {
+		return err
+	}
+
+	if status == http.StatusCreated {
+		return nil
+	}
+
+	if status != http.StatusUnprocessableEntity {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	updateURL := fmt.Sprintf("%s/repos/%s/%s/labels/%s", c.apiURL, owner, repo, url.PathEscape(name))
+	body, status, err = c.doRequest(ctx, http.MethodPatch, updateURL, payload)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
