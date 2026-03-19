@@ -131,6 +131,7 @@ func TestPromptBuilder_SystemPromptForCategoriesEmptySet(t *testing.T) {
 	prompt := pb.SystemPromptForCategories([]model.Category{})
 
 	assert.Contains(t, prompt, "- none: No review categories are enabled for this run.")
+	assert.Contains(t, prompt, `If the enabled category list says none, you must return "findings": [].`)
 	assert.NotContains(t, prompt, "- security:")
 	assert.NotContains(t, prompt, "- performance:")
 	assert.NotContains(t, prompt, "- logic:")

@@ -447,6 +447,15 @@ func TestFormatContextWarnings(t *testing.T) {
 		{path: "b.go", err: errors.New("forbidden")},
 	})
 
-	require.Len(t, warnings, 1)
+	require.Len(t, warnings, 2)
 	assert.Equal(t, "Full context was only partially loaded; skipped 2 file(s): a.go, b.go.", warnings[0])
+	assert.Equal(t, "Skip reasons: a.go (not found), b.go (permission denied).", warnings[1])
+}
+
+func TestSanitizeContextWarningReason(t *testing.T) {
+	assert.Equal(t, "not found", sanitizeContextWarningReason(errors.New("file not found")))
+	assert.Equal(t, "permission denied", sanitizeContextWarningReason(errors.New("forbidden by policy")))
+	assert.Equal(t, "timeout", sanitizeContextWarningReason(errors.New("deadline exceeded")))
+	assert.Equal(t, "request failed", sanitizeContextWarningReason(errors.New("bad gateway")))
+	assert.Equal(t, "unknown error", sanitizeContextWarningReason(nil))
 }

@@ -242,7 +242,31 @@ func formatContextWarnings(warnings []contextWarning) []string {
 		fmt.Sprintf("Full context was only partially loaded; skipped %d file(s): %s.", len(warnings), strings.Join(paths, ", ")),
 	}
 
+	reasons := make([]string, len(warnings))
+	for i, warning := range warnings {
+		reasons[i] = fmt.Sprintf("%s (%s)", warning.path, sanitizeContextWarningReason(warning.err))
+	}
+	messages = append(messages, "Skip reasons: "+strings.Join(reasons, ", ")+".")
+
 	return messages
+}
+
+func sanitizeContextWarningReason(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "not found"):
+		return "not found"
+	case strings.Contains(msg, "forbidden"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "permission"):
+		return "permission denied"
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	default:
+		return "request failed"
+	}
 }
 
 func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult, files []model.FileChange) error {

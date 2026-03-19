@@ -129,6 +129,7 @@ RULES:
 - If the PR is good, approve=true with a brief note. If there are issues, approve=false.
 - Always include a vibe check. Every codebase deserves a vibe assessment.
 - Only emit findings whose category is in the enabled category list above.
+- If the enabled category list says none, you must return "findings": [].
 - JSON must be valid. No trailing commas. No comments in the JSON.`
 }
 
