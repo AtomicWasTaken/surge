@@ -139,7 +139,7 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 				sb.WriteString("\n")
 				if f.Suggestion != "" {
 					sb.WriteString("\n**🤖 Agent fix prompt:**\n")
-					sb.WriteString(fmt.Sprintf("> %s\n", f.Suggestion))
+					sb.WriteString(fmt.Sprintf("> %s\n", SanitizeBlockquote(f.Suggestion)))
 				}
 				sb.WriteString("\n</details>\n\n")
 			}
@@ -235,6 +235,17 @@ func sanitizeTableCell(v string) string {
 
 func sanitizeInlineCode(v string) string {
 	return strings.ReplaceAll(v, "`", "")
+}
+
+// SanitizeBlockquote escapes markdown/HTML in text intended for blockquote rendering.
+// It collapses newlines into spaces so the blockquote stays on a single line,
+// escapes HTML tags, and removes leading > characters that could nest quotes.
+func SanitizeBlockquote(v string) string {
+	v = strings.ReplaceAll(v, "\n", " ")
+	v = strings.ReplaceAll(v, "\r", "")
+	v = strings.ReplaceAll(v, "<", "&lt;")
+	v = strings.ReplaceAll(v, ">", "&gt;")
+	return strings.TrimSpace(v)
 }
 
 func vibeBar(score int) string {

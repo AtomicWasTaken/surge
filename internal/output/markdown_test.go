@@ -79,6 +79,58 @@ func TestRenderSummary_NoSuggestionOmitsAgentPrompt(t *testing.T) {
 	}
 }
 
+func TestRenderSummary_SuggestionWithSpecialCharsIsEscaped(t *testing.T) {
+	out := NewMarkdownOutput("SURGE")
+	result := &model.ReviewResult{
+		Summary: "Test escaping.",
+		Findings: []model.Finding{
+			{
+				Severity:   model.SeverityHigh,
+				Category:   model.CategorySecurity,
+				File:       "main.go",
+				Line:       1,
+				Title:      "Test finding",
+				Body:       "Body text.",
+				Suggestion: "Fix <script>alert('xss')</script>\n> nested quote\nline two",
+			},
+		},
+		VibeCheck: model.VibeCheck{Score: 5, Verdict: "Okay"},
+		Approve:   false,
+		Stats:     model.ReviewStats{FilesReviewed: 1},
+	}
+
+	rendered := out.RenderSummary(result)
+
+	// HTML tags must be escaped
+	assertContains(t, rendered, "&lt;script&gt;")
+	assertContains(t, rendered, "&lt;/script&gt;")
+	// Newlines collapsed, no nested blockquotes
+	if strings.Contains(rendered, "\n> nested") {
+		t.Fatal("newlines in suggestion should be collapsed to prevent nested blockquotes")
+	}
+	// The > inside the suggestion text should be escaped
+	assertContains(t, rendered, "&gt; nested quote")
+}
+
+func TestSanitizeBlockquote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"simple text", "simple text"},
+		{"line1\nline2", "line1 line2"},
+		{"<b>bold</b>", "&lt;b&gt;bold&lt;/b&gt;"},
+		{"> nested quote", "&gt; nested quote"},
+		{"  spaces  ", "spaces"},
+	}
+	for _, tt := range tests {
+		got := SanitizeBlockquote(tt.input)
+		if got != tt.want {
+			t.Errorf("SanitizeBlockquote(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func assertContains(t *testing.T, text, want string) {
 	t.Helper()
 	if !strings.Contains(text, want) {

@@ -357,7 +357,7 @@ func (o *Orchestrator) buildInlineComments(result *model.ReviewResult, files []m
 			finding.Body,
 		)
 		if finding.Suggestion != "" {
-			body += fmt.Sprintf("\n\n**🤖 Agent fix prompt:**\n> %s", finding.Suggestion)
+			body += fmt.Sprintf("\n\n**🤖 Agent fix prompt:**\n> %s", output.SanitizeBlockquote(finding.Suggestion))
 		}
 
 		comments = append(comments, model.ReviewComment{
