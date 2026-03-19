@@ -59,9 +59,12 @@ maxInlineComments: 10
 
 func TestConfig_Validate(t *testing.T) {
 	cfg := &Config{
-		AI:          AIConfig{Provider: "litellm"},
+		AI:           AIConfig{Provider: "litellm"},
 		ContextDepth: "diff-only",
-		Output:      OutputConfig{Format: "terminal"},
+		Output:       OutputConfig{Format: "terminal"},
+		Categories: CategoriesConfig{
+			Security: true,
+		},
 	}
 	assert.NoError(t, cfg.Validate())
 
@@ -75,6 +78,10 @@ func TestConfig_Validate(t *testing.T) {
 	cfg.ContextDepth = "diff-only"
 	cfg.Output.Format = "invalid"
 	assert.Error(t, cfg.Validate())
+
+	cfg.Output.Format = "terminal"
+	cfg.Categories = CategoriesConfig{}
+	assert.EqualError(t, cfg.Validate(), "at least one review category must be enabled")
 }
 
 func TestExpandEnvVar(t *testing.T) {

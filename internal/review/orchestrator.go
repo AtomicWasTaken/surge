@@ -242,10 +242,6 @@ func formatContextWarnings(warnings []contextWarning) []string {
 		fmt.Sprintf("Full context was only partially loaded; skipped %d file(s): %s.", len(warnings), strings.Join(paths, ", ")),
 	}
 
-	for _, warning := range warnings {
-		messages = append(messages, fmt.Sprintf("Skipped %s: %v.", warning.path, warning.err))
-	}
-
 	return messages
 }
 

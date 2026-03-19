@@ -447,8 +447,6 @@ func TestFormatContextWarnings(t *testing.T) {
 		{path: "b.go", err: errors.New("forbidden")},
 	})
 
-	require.Len(t, warnings, 3)
+	require.Len(t, warnings, 1)
 	assert.Equal(t, "Full context was only partially loaded; skipped 2 file(s): a.go, b.go.", warnings[0])
-	assert.Equal(t, "Skipped a.go: not found.", warnings[1])
-	assert.Equal(t, "Skipped b.go: forbidden.", warnings[2])
 }

@@ -247,7 +247,14 @@ func (c *Config) Validate() error {
 	if err := validateOneOf("output.format", c.Output.Format, validOutputFormat); err != nil {
 		return err
 	}
+	if !c.Categories.anyEnabled() {
+		return fmt.Errorf("at least one review category must be enabled")
+	}
 	return nil
+}
+
+func (c CategoriesConfig) anyEnabled() bool {
+	return c.Security || c.Performance || c.Logic || c.Maintainability || c.Vibe
 }
 
 func validateOneOf(field, value string, allowed []string) error {

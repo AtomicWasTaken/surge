@@ -211,7 +211,7 @@ func (pb *PromptBuilder) formatCategoryDefinitions(categories []model.Category) 
 	}
 
 	if len(lines) == 0 {
-		return "- maintainability: Code duplication, complex functions, poor naming, missing tests"
+		return "- none: No review categories are enabled for this run."
 	}
 
 	return strings.Join(lines, "\n")

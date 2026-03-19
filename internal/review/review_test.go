@@ -126,6 +126,23 @@ func TestPromptBuilder_SystemPromptForCategories(t *testing.T) {
 	assert.Contains(t, prompt, "Only emit findings whose category is in the enabled category list above.")
 }
 
+func TestPromptBuilder_SystemPromptForCategoriesEmptySet(t *testing.T) {
+	pb := NewPromptBuilder()
+	prompt := pb.SystemPromptForCategories([]model.Category{})
+
+	assert.Contains(t, prompt, "- security:")
+	assert.Contains(t, prompt, "- performance:")
+	assert.Contains(t, prompt, "- logic:")
+	assert.Contains(t, prompt, "- maintainability:")
+	assert.Contains(t, prompt, "- vibe:")
+	assert.NotContains(t, prompt, "- none:")
+}
+
+func TestPromptBuilderFormatCategoryDefinitionsEmptySet(t *testing.T) {
+	pb := NewPromptBuilder()
+	assert.Equal(t, "- none: No review categories are enabled for this run.", pb.formatCategoryDefinitions([]model.Category{}))
+}
+
 func TestPromptBuilder_BuildUserPrompt(t *testing.T) {
 	pb := NewPromptBuilder()
 
