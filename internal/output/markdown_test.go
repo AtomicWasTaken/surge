@@ -112,6 +112,70 @@ func TestRenderSummary_SuggestionWithSpecialCharsIsEscaped(t *testing.T) {
 	assertContains(t, rendered, "&gt; nested quote")
 }
 
+func TestSanitizeHTML(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"plain text", "plain text"},
+		{"<script>alert('x')</script>", "&lt;script&gt;alert('x')&lt;/script&gt;"},
+		{"a > b && c < d", "a &gt; b && c &lt; d"},
+		{"line1\nline2", "line1\nline2"}, // preserves newlines
+	}
+	for _, tt := range tests {
+		got := SanitizeHTML(tt.input)
+		if got != tt.want {
+			t.Errorf("SanitizeHTML(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestRenderAgentSuggestion(t *testing.T) {
+	// Empty suggestion returns empty string
+	if got := RenderAgentSuggestion(""); got != "" {
+		t.Errorf("RenderAgentSuggestion(\"\") = %q, want empty", got)
+	}
+
+	got := RenderAgentSuggestion("Fix <the> bug\nin two lines")
+	assertContains(t, got, "🤖 Agent fix prompt:")
+	assertContains(t, got, "&lt;the&gt;")
+	// Newlines should be collapsed
+	if strings.Contains(got, "\n> in two") {
+		t.Fatal("newlines should be collapsed in suggestion blockquote")
+	}
+}
+
+func TestRenderSummary_SanitizesModelFields(t *testing.T) {
+	out := NewMarkdownOutput("SURGE")
+	result := &model.ReviewResult{
+		Summary: "Summary with <img src=x onerror=alert(1)> injection",
+		Findings: []model.Finding{
+			{
+				Severity: model.SeverityLow,
+				Category: model.CategoryLogic,
+				File:     "main.go",
+				Title:    "Title is clean",
+				Body:     "Body with <script>bad</script> HTML",
+			},
+		},
+		VibeCheck: model.VibeCheck{
+			Score:   7,
+			Verdict: "Verdict <b>bold</b>",
+		},
+		Recommendations: []string{"Step with <a href=x>link</a>"},
+		Approve:         true,
+		Stats:           model.ReviewStats{FilesReviewed: 1},
+	}
+
+	rendered := out.RenderSummary(result)
+
+	// All HTML should be escaped
+	assertContains(t, rendered, "&lt;img src=x onerror=alert(1)&gt;")
+	assertContains(t, rendered, "&lt;script&gt;bad&lt;/script&gt;")
+	assertContains(t, rendered, "&lt;b&gt;bold&lt;/b&gt;")
+	assertContains(t, rendered, "&lt;a href=x&gt;link&lt;/a&gt;")
+}
+
 func TestSanitizeBlockquote(t *testing.T) {
 	tests := []struct {
 		input string

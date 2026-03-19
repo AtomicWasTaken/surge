@@ -93,14 +93,14 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	sb.WriteString("\n")
 
 	// Summary
-	sb.WriteString(result.Summary)
+	sb.WriteString(SanitizeHTML(result.Summary))
 	sb.WriteString("\n\n")
 
 	if len(result.Warnings) > 0 {
 		sb.WriteString("<blockquote>\n\n")
 		sb.WriteString("⚠️ **Warnings**\n\n")
 		for _, warning := range result.Warnings {
-			sb.WriteString(fmt.Sprintf("- %s\n", warning))
+			sb.WriteString(fmt.Sprintf("- %s\n", SanitizeHTML(warning)))
 		}
 		sb.WriteString("\n</blockquote>\n\n")
 	}
@@ -135,12 +135,9 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 				sb.WriteString(fmt.Sprintf("<details>\n<summary>%s <strong>%s</strong> &nbsp;<code>%s</code></summary>\n\n",
 					emoji, sanitizeTableCell(f.Title), sanitizeInlineCode(location)))
 				sb.WriteString(fmt.Sprintf("**Category:** `%s` &nbsp;·&nbsp; **Severity:** %s\n\n", f.Category, severityLabel(sev)))
-				sb.WriteString(f.Body)
+				sb.WriteString(SanitizeHTML(f.Body))
 				sb.WriteString("\n")
-				if f.Suggestion != "" {
-					sb.WriteString("\n**🤖 Agent fix prompt:**\n")
-					sb.WriteString(fmt.Sprintf("> %s\n", SanitizeBlockquote(f.Suggestion)))
-				}
+				sb.WriteString(RenderAgentSuggestion(f.Suggestion))
 				sb.WriteString("\n</details>\n\n")
 			}
 		}
@@ -150,7 +147,7 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 
 	// Vibe Check (compact)
 	sb.WriteString("<details>\n")
-	sb.WriteString(fmt.Sprintf("<summary>🎯 Vibe Check &nbsp;·&nbsp; %d/10 &nbsp;—&nbsp; %s</summary>\n\n", result.VibeCheck.Score, result.VibeCheck.Verdict))
+	sb.WriteString(fmt.Sprintf("<summary>🎯 Vibe Check &nbsp;·&nbsp; %d/10 &nbsp;—&nbsp; %s</summary>\n\n", result.VibeCheck.Score, SanitizeHTML(result.VibeCheck.Verdict)))
 	if len(result.VibeCheck.Flags) > 0 {
 		sb.WriteString("**Flags:** ")
 		for i, flag := range result.VibeCheck.Flags {
@@ -168,7 +165,7 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 		sb.WriteString("<details>\n")
 		sb.WriteString("<summary>✅ Recommended next steps</summary>\n\n")
 		for _, rec := range result.Recommendations {
-			sb.WriteString(fmt.Sprintf("- [ ] %s\n", rec))
+			sb.WriteString(fmt.Sprintf("- [ ] %s\n", SanitizeHTML(rec)))
 		}
 		sb.WriteString("\n</details>\n\n")
 	}
@@ -246,6 +243,24 @@ func SanitizeBlockquote(v string) string {
 	v = strings.ReplaceAll(v, "<", "&lt;")
 	v = strings.ReplaceAll(v, ">", "&gt;")
 	return strings.TrimSpace(v)
+}
+
+// SanitizeHTML escapes raw HTML tags in model-generated text while preserving
+// markdown formatting (newlines, backticks, etc.). Use this for free-text fields
+// like summary, body, verdict, and warnings that render as markdown paragraphs.
+func SanitizeHTML(v string) string {
+	v = strings.ReplaceAll(v, "<", "&lt;")
+	v = strings.ReplaceAll(v, ">", "&gt;")
+	return v
+}
+
+// RenderAgentSuggestion formats a finding suggestion as a markdown agent fix prompt block.
+// Returns an empty string if the suggestion is empty.
+func RenderAgentSuggestion(suggestion string) string {
+	if suggestion == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n**🤖 Agent fix prompt:**\n> %s\n", SanitizeBlockquote(suggestion))
 }
 
 func vibeBar(score int) string {
