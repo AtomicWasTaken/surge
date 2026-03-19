@@ -133,7 +133,7 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 				if f.Line > 0 {
 					location = fmt.Sprintf("%s:%d", f.File, f.Line)
 				}
-				emoji := severityEmoji(sev)
+				emoji := SeverityEmoji(sev)
 				sb.WriteString(fmt.Sprintf("<details>\n<summary>%s <strong>%s</strong> &nbsp;<code>%s</code></summary>\n\n",
 					emoji, sanitizeTableCell(f.Title), sanitizeInlineCode(location)))
 				sb.WriteString(fmt.Sprintf("**Category:** `%s` &nbsp;·&nbsp; **Severity:** %s\n\n", f.Category, severityLabel(sev)))
@@ -183,7 +183,8 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	return sb.String()
 }
 
-func severityEmoji(s model.Severity) string {
+// SeverityEmoji returns the colored circle emoji for a severity level.
+func SeverityEmoji(s model.Severity) string {
 	switch s {
 	case model.SeverityCritical:
 		return "🔴"
@@ -269,13 +270,17 @@ func SanitizeHTML(v string) string {
 }
 
 // RenderAgentSuggestion formats a finding suggestion as a markdown agent fix prompt block.
-// Returns an empty string if the suggestion is empty. Callers are responsible for
-// surrounding whitespace/newlines.
+// The suggestion is rendered inside a fenced code block to display as literal text,
+// preventing any markdown/HTML interpretation. Returns an empty string if the suggestion
+// is empty. Callers are responsible for surrounding whitespace/newlines.
 func RenderAgentSuggestion(suggestion string) string {
 	if suggestion == "" {
 		return ""
 	}
-	return fmt.Sprintf("**🤖 Agent fix prompt:**\n> %s", SanitizeBlockquote(suggestion))
+	// Use a fenced code block so suggestion text is rendered literally,
+	// immune to markdown metacharacters, HTML, and blockquote nesting.
+	sanitized := strings.ReplaceAll(suggestion, "```", "` ` `")
+	return fmt.Sprintf("**🤖 Agent fix prompt:**\n```text\n%s\n```", sanitized)
 }
 
 func vibeBar(score int) string {

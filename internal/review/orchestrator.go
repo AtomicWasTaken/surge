@@ -348,11 +348,11 @@ func (o *Orchestrator) buildInlineComments(result *model.ReviewResult, files []m
 			continue
 		}
 
-		emoji := severityEmojiForInline(finding.Severity)
+		emoji := output.SeverityEmoji(finding.Severity)
 		body := fmt.Sprintf("%s **%s** — %s\n\n%s",
 			emoji,
 			output.SanitizeHTML(finding.Title),
-			strings.ToUpper(string(finding.Severity)),
+			output.SanitizeHTML(strings.ToUpper(string(finding.Severity))),
 			output.SanitizeHTML(finding.Body),
 		)
 		if suggestion := output.RenderAgentSuggestion(finding.Suggestion); suggestion != "" {
@@ -453,21 +453,6 @@ func (o *Orchestrator) isSurgeComment(body string) bool {
 		}
 	}
 	return strings.Contains(body, "<!-- SURGE_SUMMARY -->")
-}
-
-func severityEmojiForInline(s model.Severity) string {
-	switch s {
-	case model.SeverityCritical:
-		return "🔴"
-	case model.SeverityHigh:
-		return "🟠"
-	case model.SeverityMedium:
-		return "🟡"
-	case model.SeverityLow:
-		return "🔵"
-	default:
-		return "⚪"
-	}
 }
 
 // findPositionInPatch finds the diff position for a given file line number.

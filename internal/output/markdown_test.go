@@ -101,15 +101,11 @@ func TestRenderSummary_SuggestionWithSpecialCharsIsEscaped(t *testing.T) {
 
 	rendered := out.RenderSummary(result)
 
-	// HTML tags must be escaped
-	assertContains(t, rendered, "&lt;script&gt;")
-	assertContains(t, rendered, "&lt;/script&gt;")
-	// Newlines collapsed, no nested blockquotes
-	if strings.Contains(rendered, "\n> nested") {
-		t.Fatal("newlines in suggestion should be collapsed to prevent nested blockquotes")
-	}
-	// The > inside the suggestion text should be escaped
-	assertContains(t, rendered, "&gt; nested quote")
+	// Suggestion should be inside a code fence
+	assertContains(t, rendered, "```text")
+	assertContains(t, rendered, "🤖 Agent fix prompt:")
+	// Content is literal inside code fence — raw text preserved
+	assertContains(t, rendered, "Fix <script>alert('xss')</script>")
 }
 
 func TestRenderSummary_ZeroFindingsShowsBadgeLine(t *testing.T) {
@@ -152,10 +148,14 @@ func TestRenderAgentSuggestion(t *testing.T) {
 
 	got := RenderAgentSuggestion("Fix <the> bug\nin two lines")
 	assertContains(t, got, "🤖 Agent fix prompt:")
-	assertContains(t, got, "&lt;the&gt;")
-	// Newlines should be collapsed
-	if strings.Contains(got, "\n> in two") {
-		t.Fatal("newlines should be collapsed in suggestion blockquote")
+	assertContains(t, got, "```text")
+	assertContains(t, got, "Fix <the> bug")
+	// Content should be inside a code fence, preserving literal text
+
+	// Triple backticks in suggestion should be escaped
+	got2 := RenderAgentSuggestion("Use ```code``` here")
+	if strings.Contains(got2, "```code```") {
+		t.Fatal("triple backticks in suggestion should be escaped to prevent breaking the code fence")
 	}
 }
 
