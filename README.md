@@ -105,6 +105,8 @@ All config values can be set via environment variables:
 
 ## GitHub Actions
 
+The GitHub token used for posting reviews must be able to write pull request reviews and dismiss prior bot reviews on reruns. On GitHub Actions, use a job-level permissions block that includes `pull-requests: write`.
+
 Add to your workflow:
 
 ```yaml
@@ -116,6 +118,9 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 

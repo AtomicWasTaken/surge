@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -30,6 +31,17 @@ type Orchestrator struct {
 	commentMarker string
 }
 
+const reviewDismissalMessage = "Superseded by a newer surge review run."
+
+type cleanupStats struct {
+	deletedIssueComments  int
+	deletedReviewComments int
+	deletedReviews        int
+	dismissedReviews      int
+	skippedReviews        int
+	failedOperations      int
+}
+
 // NewOrchestrator creates a new review orchestrator.
 func NewOrchestrator(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) *Orchestrator {
 	return &Orchestrator{
@@ -42,7 +54,7 @@ func NewOrchestrator(aiClient ai.AIClient, ghClient github.PRClient, cfg *config
 		stdOut:        output.NewTerminalOutput(),
 		jsonOut:       output.NewJSONOutput(),
 		cfg:           cfg,
-		commentMarker: "<!-- " + cfg.CommentMarker + " -->",
+		commentMarker: output.CommentMarker(cfg.CommentMarker),
 	}
 }
 
@@ -168,9 +180,19 @@ func (o *Orchestrator) filterCategories(systemPrompt string) string {
 
 func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult, files []model.FileChange) error {
 	// Delete old surge comments first (idempotency)
-	if err := o.deleteOldComments(ctx, owner, repo, prNumber); err != nil {
-		// Log but don't fail - the old comments will just pile up
-		fmt.Printf("Warning: failed to delete old comments: %v\n", err)
+	stats, err := o.deleteOldComments(ctx, owner, repo, prNumber)
+	if err != nil {
+		// Log but don't fail - reruns should still post the latest review.
+		fmt.Printf(
+			"Warning: surge cleanup completed with errors (deleted_issue_comments=%d deleted_review_comments=%d deleted_reviews=%d dismissed_reviews=%d skipped_reviews=%d failures=%d): %v\n",
+			stats.deletedIssueComments,
+			stats.deletedReviewComments,
+			stats.deletedReviews,
+			stats.dismissedReviews,
+			stats.skippedReviews,
+			stats.failedOperations,
+			err,
+		)
 	}
 
 	// Build inline comments
@@ -199,7 +221,7 @@ func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNum
 		}
 
 		reviewInput := &model.ReviewInput{
-			Body:     "<!-- " + o.cfg.CommentMarker + "_INLINE -->",
+			Body:     output.ScopedCommentMarker(o.cfg.CommentMarker, output.CommentScopeInline),
 			Event:    event,
 			Comments: comments,
 		}
@@ -251,50 +273,90 @@ func (o *Orchestrator) buildInlineComments(result *model.ReviewResult, files []m
 	return comments
 }
 
-func (o *Orchestrator) deleteOldComments(ctx context.Context, owner, repo string, prNumber int) error {
+func (o *Orchestrator) deleteOldComments(ctx context.Context, owner, repo string, prNumber int) (cleanupStats, error) {
+	var stats cleanupStats
+	var cleanupErrs []error
+
 	comments, err := o.ghClient.ListComments(ctx, owner, repo, prNumber)
 	if err != nil {
-		return err
-	}
-
-	for _, c := range comments {
-		if o.isSurgeComment(c.Body) {
-			if err := o.ghClient.DeleteComment(ctx, owner, repo, c.ID); err != nil {
-				return err
+		stats.failedOperations++
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("list issue comments: %w", err))
+	} else {
+		for _, c := range comments {
+			if o.isSurgeComment(c.Body) {
+				if err := o.ghClient.DeleteComment(ctx, owner, repo, c.ID); err != nil {
+					stats.failedOperations++
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("delete issue comment %d: %w", c.ID, err))
+				} else {
+					stats.deletedIssueComments++
+				}
 			}
 		}
 	}
 
 	reviews, err := o.ghClient.ListReviews(ctx, owner, repo, prNumber)
 	if err != nil {
-		return err
-	}
+		stats.failedOperations++
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("list reviews: %w", err))
+	} else {
+		for _, r := range reviews {
+			if !o.isSurgeComment(r.Body) {
+				continue
+			}
 
-	for _, r := range reviews {
-		if !o.isSurgeComment(r.Body) {
-			continue
-		}
+			reviewComments, err := o.ghClient.ListReviewComments(ctx, owner, repo, prNumber, r.ID)
+			if err != nil {
+				stats.failedOperations++
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("list review comments for review %d: %w", r.ID, err))
+			} else {
+				for _, rc := range reviewComments {
+					if err := o.ghClient.DeleteReviewComment(ctx, owner, repo, rc.ID); err != nil {
+						stats.failedOperations++
+						cleanupErrs = append(cleanupErrs, fmt.Errorf("delete review comment %d: %w", rc.ID, err))
+					} else {
+						stats.deletedReviewComments++
+					}
+				}
+			}
 
-		reviewComments, err := o.ghClient.ListReviewComments(ctx, owner, repo, prNumber, r.ID)
-		if err != nil {
-			return err
-		}
-
-		for _, rc := range reviewComments {
-			if err := o.ghClient.DeleteReviewComment(ctx, owner, repo, rc.ID); err != nil {
-				return err
+			switch strings.ToUpper(strings.TrimSpace(r.State)) {
+			case "PENDING":
+				if err := o.ghClient.DeleteReview(ctx, owner, repo, prNumber, r.ID); err != nil {
+					stats.failedOperations++
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("delete review %d: %w", r.ID, err))
+				} else {
+					stats.deletedReviews++
+				}
+			case "DISMISSED":
+				stats.skippedReviews++
+				continue
+			case "COMMENTED", "APPROVED", "CHANGES_REQUESTED":
+				if err := o.ghClient.DismissReview(ctx, owner, repo, prNumber, r.ID, reviewDismissalMessage); err != nil {
+					stats.failedOperations++
+					cleanupErrs = append(cleanupErrs, fmt.Errorf("dismiss review %d: %w", r.ID, err))
+				} else {
+					stats.dismissedReviews++
+				}
+			default:
+				stats.skippedReviews++
+				continue
 			}
 		}
 	}
 
-	return nil
+	return stats, errors.Join(cleanupErrs...)
 }
 
 func (o *Orchestrator) isSurgeComment(body string) bool {
-	legacySummaryMarker := "<!-- SURGE_SUMMARY -->"
-	return strings.Contains(body, o.commentMarker) ||
-		strings.Contains(body, "<!-- "+o.cfg.CommentMarker+"_") ||
-		strings.Contains(body, legacySummaryMarker)
+	if strings.Contains(body, o.commentMarker) {
+		return true
+	}
+	for _, marker := range output.ScopedCommentMarkers(o.cfg.CommentMarker) {
+		if strings.Contains(body, marker) {
+			return true
+		}
+	}
+	return strings.Contains(body, "<!-- SURGE_SUMMARY -->")
 }
 
 // findPositionInPatch finds the diff position for a given file line number.

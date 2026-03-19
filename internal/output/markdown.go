@@ -12,6 +12,29 @@ type MarkdownOutput struct {
 	commentMarker string
 }
 
+const (
+	CommentScopeSummary = "SUMMARY"
+	CommentScopeInline  = "INLINE"
+)
+
+// ScopedCommentMarkers returns the scoped surge markers used across markdown output and cleanup.
+func ScopedCommentMarkers(marker string) []string {
+	return []string{
+		ScopedCommentMarker(marker, CommentScopeSummary),
+		ScopedCommentMarker(marker, CommentScopeInline),
+	}
+}
+
+// CommentMarker returns the base marker used to tag surge-authored comments.
+func CommentMarker(marker string) string {
+	return "<!-- " + marker + " -->"
+}
+
+// ScopedCommentMarker returns a scoped marker for a specific surge comment type.
+func ScopedCommentMarker(marker, scope string) string {
+	return "<!-- " + marker + "_" + scope + " -->"
+}
+
 // NewMarkdownOutput creates a new markdown output renderer.
 func NewMarkdownOutput(commentMarker string) *MarkdownOutput {
 	return &MarkdownOutput{
@@ -29,12 +52,10 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 		decision = "❌ Request Changes"
 	}
 
-	sb.WriteString("<!-- ")
-	sb.WriteString(m.commentMarker)
-	sb.WriteString(" -->\n")
-	sb.WriteString("<!-- ")
-	sb.WriteString(m.commentMarker)
-	sb.WriteString("_SUMMARY -->\n")
+	sb.WriteString(CommentMarker(m.commentMarker))
+	sb.WriteString("\n")
+	sb.WriteString(ScopedCommentMarker(m.commentMarker, CommentScopeSummary))
+	sb.WriteString("\n")
 	sb.WriteString("## ⚡ surge Review Summary\n\n")
 	sb.WriteString("| Decision | Findings | Files | Vibe |\n")
 	sb.WriteString("|---|---:|---:|---:|\n")

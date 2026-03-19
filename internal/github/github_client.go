@@ -360,9 +360,10 @@ func (c *GitHubClient) ListReviews(ctx context.Context, owner, repo string, prNu
 	}
 
 	var reviews []struct {
-		ID   int64  `json:"id"`
-		Body string `json:"body"`
-		User struct {
+		ID    int64  `json:"id"`
+		Body  string `json:"body"`
+		State string `json:"state"`
+		User  struct {
 			Login string `json:"login"`
 			Type  string `json:"type"`
 		} `json:"user"`
@@ -378,6 +379,7 @@ func (c *GitHubClient) ListReviews(ctx context.Context, owner, repo string, prNu
 		result[i] = &model.PRReview{
 			ID:        r.ID,
 			Body:      r.Body,
+			State:     r.State,
 			Author:    r.User.Login,
 			IsBot:     r.User.Type == "Bot",
 			CreatedAt: r.CreatedAt,
@@ -397,6 +399,26 @@ func (c *GitHubClient) DeleteReview(ctx context.Context, owner, repo string, prN
 	}
 
 	if status != http.StatusOK && status != http.StatusNoContent {
+		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
+	}
+
+	return nil
+}
+
+// DismissReview dismisses a submitted review so reruns can supersede it.
+func (c *GitHubClient) DismissReview(ctx context.Context, owner, repo string, prNumber int, reviewID int64, message string) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews/%d/dismissals", c.apiURL, owner, repo, prNumber, reviewID)
+
+	payload := map[string]string{
+		"message": message,
+	}
+
+	body, status, err := c.doRequest(ctx, http.MethodPut, url, payload)
+	if err != nil {
+		return err
+	}
+
+	if status != http.StatusOK && status != http.StatusCreated {
 		return fmt.Errorf("GitHub API error (%d): %s", status, string(body))
 	}
 
