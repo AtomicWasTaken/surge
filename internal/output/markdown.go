@@ -139,7 +139,11 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 				sb.WriteString(fmt.Sprintf("**Category:** `%s` &nbsp;·&nbsp; **Severity:** %s\n\n", f.Category, severityLabel(sev)))
 				sb.WriteString(SanitizeHTML(f.Body))
 				sb.WriteString("\n")
-				sb.WriteString(RenderAgentSuggestion(f.Suggestion))
+				if suggestion := RenderAgentSuggestion(f.Suggestion); suggestion != "" {
+					sb.WriteString("\n")
+					sb.WriteString(suggestion)
+					sb.WriteString("\n")
+				}
 				sb.WriteString("\n</details>\n\n")
 			}
 		}
@@ -239,7 +243,7 @@ func sanitizeTableCell(v string) string {
 	return v
 }
 
-// sanitizeInlineCode strips backticks and escapes HTML for inline code spans.
+// sanitizeInlineCode strips backticks to prevent breaking out of <code> spans.
 func sanitizeInlineCode(v string) string {
 	return strings.ReplaceAll(v, "`", "")
 }
@@ -265,12 +269,13 @@ func SanitizeHTML(v string) string {
 }
 
 // RenderAgentSuggestion formats a finding suggestion as a markdown agent fix prompt block.
-// Returns an empty string if the suggestion is empty.
+// Returns an empty string if the suggestion is empty. Callers are responsible for
+// surrounding whitespace/newlines.
 func RenderAgentSuggestion(suggestion string) string {
 	if suggestion == "" {
 		return ""
 	}
-	return fmt.Sprintf("\n**🤖 Agent fix prompt:**\n> %s\n", SanitizeBlockquote(suggestion))
+	return fmt.Sprintf("**🤖 Agent fix prompt:**\n> %s", SanitizeBlockquote(suggestion))
 }
 
 func vibeBar(score int) string {

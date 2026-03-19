@@ -355,7 +355,9 @@ func (o *Orchestrator) buildInlineComments(result *model.ReviewResult, files []m
 			strings.ToUpper(string(finding.Severity)),
 			output.SanitizeHTML(finding.Body),
 		)
-		body += output.RenderAgentSuggestion(finding.Suggestion)
+		if suggestion := output.RenderAgentSuggestion(finding.Suggestion); suggestion != "" {
+			body += "\n\n" + suggestion
+		}
 
 		comments = append(comments, model.ReviewComment{
 			Path:     finding.File,
