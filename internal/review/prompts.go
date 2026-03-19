@@ -3,6 +3,8 @@ package review
 import (
 	"fmt"
 	"strings"
+
+	"github.com/AtomicWasTaken/surge/internal/model"
 )
 
 // ContextDepth controls how much codebase context the AI receives.
@@ -11,15 +13,15 @@ type ContextDepth string
 const (
 	ContextDepthDiffOnly ContextDepth = "diff-only"
 	ContextDepthRelevant ContextDepth = "relevant"
-	ContextDepthFull    ContextDepth = "full"
+	ContextDepthFull     ContextDepth = "full"
 )
 
 // PRContext holds the context needed to build a review prompt.
 type PRContext struct {
-	Title       string
-	Body        string
+	Title        string
+	Body         string
 	ChangedFiles int
-	Files       []FileContext
+	Files        []FileContext
 }
 
 // FileContext holds context for a single changed file.
@@ -35,6 +37,17 @@ type FileContext struct {
 // PromptBuilder constructs prompts for the AI code reviewer.
 type PromptBuilder struct{}
 
+var categoryDefinitions = []struct {
+	name        model.Category
+	description string
+}{
+	{name: model.CategorySecurity, description: "Vulnerabilities, auth issues, data exposure, injection risks"},
+	{name: model.CategoryPerformance, description: "N+1 queries, missing indexes, inefficient algorithms, memory leaks"},
+	{name: model.CategoryLogic, description: "Off-by-one errors, race conditions, incorrect business logic"},
+	{name: model.CategoryMaintainability, description: "Code duplication, complex functions, poor naming, missing tests"},
+	{name: model.CategoryVibe, description: "Generic AI-generated patterns, context blindness, over-engineering, wrong/confused outputs"},
+}
+
 // NewPromptBuilder creates a new prompt builder.
 func NewPromptBuilder() *PromptBuilder {
 	return &PromptBuilder{}
@@ -42,6 +55,16 @@ func NewPromptBuilder() *PromptBuilder {
 
 // SystemPrompt returns the system prompt for the AI reviewer.
 func (pb *PromptBuilder) SystemPrompt() string {
+	return pb.SystemPromptForCategories(nil)
+}
+
+// SystemPromptForCategories returns the system prompt scoped to the configured categories.
+func (pb *PromptBuilder) SystemPromptForCategories(categories []model.Category) string {
+	enabledCategories := categories
+	if len(enabledCategories) == 0 {
+		enabledCategories = enabledReviewCategories()
+	}
+
 	return `You are surge, an expert AI-powered code reviewer. You analyze pull request
 diffs and provide structured, actionable feedback. You are direct, specific,
 and avoid generic advice. You never say "looks good" without specifics.
@@ -79,11 +102,7 @@ SEVERITY DEFINITIONS:
 - INFO: Suggestions, tips, improvements, optimizations
 
 CATEGORIES:
-- security: Vulnerabilities, auth issues, data exposure, injection risks
-- performance: N+1 queries, missing indexes, inefficient algorithms, memory leaks
-- logic: Off-by-one errors, race conditions, incorrect business logic
-- maintainability: Code duplication, complex functions, poor naming, missing tests
-- vibe: Generic AI-generated patterns, context blindness, over-engineering, wrong/confused outputs
+` + pb.formatCategoryDefinitions(enabledCategories) + `
 
 VIBE CODABILITY SCORING:
 - 10: Perfect. Code that feels hand-crafted, idiomatic, project-aware.
@@ -109,6 +128,7 @@ RULES:
 - For each finding, include the specific file path and line number if possible.
 - If the PR is good, approve=true with a brief note. If there are issues, approve=false.
 - Always include a vibe check. Every codebase deserves a vibe assessment.
+- Only emit findings whose category is in the enabled category list above.
 - JSON must be valid. No trailing commas. No comments in the JSON.`
 }
 
@@ -174,4 +194,35 @@ func (pb *PromptBuilder) BuildUserPrompt(pr *PRContext, depth ContextDepth) stri
 	sb.WriteString("\nProvide your review in the required JSON format.")
 
 	return sb.String()
+}
+
+func (pb *PromptBuilder) formatCategoryDefinitions(categories []model.Category) string {
+	enabled := make(map[model.Category]struct{}, len(categories))
+	for _, category := range categories {
+		enabled[category] = struct{}{}
+	}
+
+	lines := make([]string, 0, len(categoryDefinitions))
+	for _, definition := range categoryDefinitions {
+		if _, ok := enabled[definition.name]; !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s: %s", definition.name, definition.description))
+	}
+
+	if len(lines) == 0 {
+		return "- maintainability: Code duplication, complex functions, poor naming, missing tests"
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func enabledReviewCategories() []model.Category {
+	return []model.Category{
+		model.CategorySecurity,
+		model.CategoryPerformance,
+		model.CategoryLogic,
+		model.CategoryMaintainability,
+		model.CategoryVibe,
+	}
 }

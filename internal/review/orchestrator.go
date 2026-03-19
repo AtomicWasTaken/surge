@@ -86,17 +86,17 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 	if depth == "" {
 		depth = ContextDepthDiffOnly
 	}
+	if err := o.enrichPRContext(ctx, owner, repo, pr, prCtx, depth); err != nil {
+		return nil, fmt.Errorf("failed to load PR context: %w", err)
+	}
 
 	// Step 5: Build and send AI request
-	systemPrompt := o.prompts.SystemPrompt()
+	systemPrompt := o.filterCategories()
 	userPrompt := o.prompts.BuildUserPrompt(prCtx, depth)
-
-	// Filter categories based on config
-	categories := o.filterCategories(systemPrompt)
 
 	aiReq := &ai.CompletionRequest{
 		Model:  o.cfg.AI.Model,
-		System: categories,
+		System: systemPrompt,
 		Messages: []ai.Message{
 			{Role: "user", Content: userPrompt},
 		},
@@ -105,7 +105,7 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 		Debug:       o.cfg.Verbose,
 	}
 	if o.cfg.Verbose {
-		fmt.Printf("[debug] prompt sizes system_chars=%d user_chars=%d\n", len(categories), len(userPrompt))
+		fmt.Printf("[debug] prompt sizes system_chars=%d user_chars=%d\n", len(systemPrompt), len(userPrompt))
 	}
 
 	aiResp, err := o.aiClient.Complete(ctx, aiReq)
@@ -169,13 +169,54 @@ func (o *Orchestrator) buildPRContext(pr *model.PR, files []model.FileChange) *P
 	return prCtx
 }
 
-func (o *Orchestrator) filterCategories(systemPrompt string) string {
-	// The system prompt already includes all categories.
-	// We could strip unused categories from the prompt, but for simplicity
-	// we include all and let the AI focus on what matters.
-	// For a more optimized approach, we could modify the prompt here.
-	_ = systemPrompt
-	return o.prompts.SystemPrompt()
+func (o *Orchestrator) enrichPRContext(ctx context.Context, owner, repo string, pr *model.PR, prCtx *PRContext, depth ContextDepth) error {
+	if depth != ContextDepthFull {
+		return nil
+	}
+
+	for i := range prCtx.Files {
+		if !supportsFileContent(prCtx.Files[i].Status) {
+			continue
+		}
+
+		content, err := o.ghClient.GetFileContent(ctx, owner, repo, prCtx.Files[i].Path, pr.HeadSHA)
+		if err != nil {
+			return fmt.Errorf("load %s at %s: %w", prCtx.Files[i].Path, pr.HeadSHA, err)
+		}
+		prCtx.Files[i].Content = content
+	}
+
+	return nil
+}
+
+func (o *Orchestrator) filterCategories() string {
+	return o.prompts.SystemPromptForCategories(o.enabledCategories())
+}
+
+func (o *Orchestrator) enabledCategories() []model.Category {
+	var categories []model.Category
+
+	if o.cfg.Categories.Security {
+		categories = append(categories, model.CategorySecurity)
+	}
+	if o.cfg.Categories.Performance {
+		categories = append(categories, model.CategoryPerformance)
+	}
+	if o.cfg.Categories.Logic {
+		categories = append(categories, model.CategoryLogic)
+	}
+	if o.cfg.Categories.Maintainability {
+		categories = append(categories, model.CategoryMaintainability)
+	}
+	if o.cfg.Categories.Vibe {
+		categories = append(categories, model.CategoryVibe)
+	}
+
+	return categories
+}
+
+func supportsFileContent(status string) bool {
+	return status != string(model.FileStatusDeleted)
 }
 
 func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult, files []model.FileChange) error {

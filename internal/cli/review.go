@@ -11,53 +11,14 @@ import (
 )
 
 func runReview(cmd *cobra.Command, args []string) error {
-	// Load config
-	cfg, err := config.Load(flagConfig)
+	cfg, err := loadReviewConfig(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return err
 	}
 
-	applyReviewFlagOverrides(cmd, cfg)
-
-	// Validate config
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
-	}
-
-	// Apply explicit flag overrides
-	if cmd.Flags().Changed("verbose") {
-		cfg.Verbose = flagVerbose
-	}
-	_ = cmd // mark as used
-
-	// Apply --no-inline and --no-summary flags
-	if flagNoInline {
-		cfg.DisableInlineComments = true
-	}
-	if flagNoSummary {
-		cfg.DisableSummaryComment = true
-	}
-
-	// Detect owner/repo from git if not set
-	owner := cfg.GitHub.Owner
-	repo := cfg.GitHub.Repo
-	if owner == "" || repo == "" {
-		detectedOwner, detectedRepo, err := detectGitInfo()
-		if err != nil {
-			return fmt.Errorf("could not detect owner/repo: %w (use --owner and --repo flags, or set in config)", err)
-		}
-		if owner == "" {
-			owner = detectedOwner
-		}
-		if repo == "" {
-			repo = detectedRepo
-		}
-	}
-
-	// Get PR number
-	prNumber := cfg.GitHub.PRNumber
-	if prNumber <= 0 {
-		return fmt.Errorf("PR number is required (use --pr flag or set github.prNumber in config)")
+	owner, repo, prNumber, err := resolveReviewTarget(cfg)
+	if err != nil {
+		return err
 	}
 
 	if cfg.Verbose {
@@ -65,38 +26,23 @@ func runReview(cmd *cobra.Command, args []string) error {
 			owner, repo, prNumber, cfg.AI.Provider, cfg.AI.Model, cfg.AI.BaseURL, cfg.ContextDepth, flagDryRun)
 	}
 
-	// Check for required tokens
-	if cfg.GitHub.Token == "" {
-		return fmt.Errorf("GitHub token is required (set SURGE_GITHUB_TOKEN env var, or use --github-token flag)")
-	}
-	if cfg.AI.APIKey == "" && cfg.AI.Provider == "claude" {
-		return fmt.Errorf("AI API key is required (set SURGE_AI_API_KEY env var, or use --ai-api-key flag)")
+	if err := validateReviewCredentials(cfg); err != nil {
+		return err
 	}
 
-	// Create AI client
-	var aiClient ai.AIClient
-	switch cfg.AI.Provider {
-	case "litellm":
-		aiClient = ai.NewLiteLLMClient(cfg.AI.BaseURL, cfg.AI.APIKey, cfg.AI.Model)
-	case "claude":
-		aiClient = ai.NewClaudeClient(cfg.AI.APIKey, cfg.AI.Model)
-	default:
-		return fmt.Errorf("unknown AI provider: %s", cfg.AI.Provider)
+	aiClient, err := newAIClient(cfg)
+	if err != nil {
+		return err
 	}
 
-	// Create GitHub client
 	ghClient := github.NewGitHubClient(cfg.GitHub.Token)
-
-	// Create orchestrator
 	orch := review.NewOrchestrator(aiClient, ghClient, cfg)
 
-	// Run the review
 	result, err := orch.Review(cmd.Context(), owner, repo, prNumber, flagDryRun)
 	if err != nil {
 		return fmt.Errorf("review failed: %w", err)
 	}
 
-	// Print final status
 	if flagDryRun {
 		fmt.Println("\n[DRY RUN] No changes posted to the PR.")
 	} else {
@@ -109,6 +55,80 @@ func runReview(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func loadReviewConfig(cmd *cobra.Command) (*config.Config, error) {
+	cfg, err := config.Load(flagConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	applyReviewFlagOverrides(cmd, cfg)
+	applyReviewBooleanOverrides(cmd, cfg)
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+func applyReviewBooleanOverrides(cmd *cobra.Command, cfg *config.Config) {
+	if cmd.Flags().Changed("verbose") {
+		cfg.Verbose = flagVerbose
+	}
+	if flagNoInline {
+		cfg.DisableInlineComments = true
+	}
+	if flagNoSummary {
+		cfg.DisableSummaryComment = true
+	}
+}
+
+func resolveReviewTarget(cfg *config.Config) (owner, repo string, prNumber int, err error) {
+	owner = cfg.GitHub.Owner
+	repo = cfg.GitHub.Repo
+
+	if owner == "" || repo == "" {
+		detectedOwner, detectedRepo, detectErr := detectGitInfo()
+		if detectErr != nil {
+			return "", "", 0, fmt.Errorf("could not detect owner/repo: %w (use --owner and --repo flags, or set in config)", detectErr)
+		}
+		if owner == "" {
+			owner = detectedOwner
+		}
+		if repo == "" {
+			repo = detectedRepo
+		}
+	}
+
+	prNumber = cfg.GitHub.PRNumber
+	if prNumber <= 0 {
+		return "", "", 0, fmt.Errorf("PR number is required (use --pr flag or set github.prNumber in config)")
+	}
+
+	return owner, repo, prNumber, nil
+}
+
+func validateReviewCredentials(cfg *config.Config) error {
+	if cfg.GitHub.Token == "" {
+		return fmt.Errorf("GitHub token is required (set SURGE_GITHUB_TOKEN env var, or use --github-token flag)")
+	}
+	if cfg.AI.APIKey == "" && cfg.AI.Provider == "claude" {
+		return fmt.Errorf("AI API key is required (set SURGE_AI_API_KEY env var, or use --ai-api-key flag)")
+	}
+	return nil
+}
+
+func newAIClient(cfg *config.Config) (ai.AIClient, error) {
+	switch cfg.AI.Provider {
+	case "litellm":
+		return ai.NewLiteLLMClient(cfg.AI.BaseURL, cfg.AI.APIKey, cfg.AI.Model), nil
+	case "claude":
+		return ai.NewClaudeClient(cfg.AI.APIKey, cfg.AI.Model), nil
+	default:
+		return nil, fmt.Errorf("unknown AI provider: %s", cfg.AI.Provider)
+	}
 }
 
 func applyReviewFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
