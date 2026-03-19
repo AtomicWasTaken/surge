@@ -181,7 +181,10 @@ func (o *Orchestrator) enrichPRContext(ctx context.Context, owner, repo string, 
 
 		content, err := o.ghClient.GetFileContent(ctx, owner, repo, prCtx.Files[i].Path, pr.HeadSHA)
 		if err != nil {
-			return fmt.Errorf("load %s at %s: %w", prCtx.Files[i].Path, pr.HeadSHA, err)
+			if o.cfg.Verbose {
+				fmt.Printf("[debug] skipped full context for %s at %s: %v\n", prCtx.Files[i].Path, pr.HeadSHA, err)
+			}
+			continue
 		}
 		prCtx.Files[i].Content = content
 	}

@@ -44,3 +44,31 @@ func TestDismissReviewUsesDocumentedPayload(t *testing.T) {
 		"message": "Superseded by a newer surge review run.",
 	}, gotBody)
 }
+
+func TestGetFileContentEscapesPathAndRef(t *testing.T) {
+	var (
+		gotPath     string
+		gotURI      string
+		gotRawQuery string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotURI = r.RequestURI
+		gotRawQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"content":"aGVsbG8=","encoding":"base64"}`))
+	}))
+	defer server.Close()
+
+	client := NewGitHubClient("test-token")
+	client.apiURL = server.URL
+
+	content, err := client.GetFileContent(context.Background(), "octo", "surge", "dir with spaces/a#b?.go", "feature/test branch")
+	require.NoError(t, err)
+
+	assert.Equal(t, "hello", content)
+	assert.Equal(t, "/repos/octo/surge/contents/dir with spaces/a#b?.go", gotPath)
+	assert.Equal(t, "/repos/octo/surge/contents/dir%20with%20spaces/a%23b%3F.go?ref=feature%2Ftest+branch", gotURI)
+	assert.Equal(t, "ref=feature%2Ftest+branch", gotRawQuery)
+}

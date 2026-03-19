@@ -412,3 +412,28 @@ func TestEnrichPRContextLoadsFullFileContent(t *testing.T) {
 	assert.Equal(t, "package app\n", prCtx.Files[0].Content)
 	assert.Empty(t, prCtx.Files[1].Content)
 }
+
+func TestEnrichPRContextContinuesWhenFileContentLookupFails(t *testing.T) {
+	client := &stubPRClient{
+		fileContents: map[string]string{
+			"internal/ok.go@abc123": "package ok\n",
+		},
+		fileContentErrs: map[string]error{
+			"internal/missing.go@abc123": errors.New("not found"),
+		},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{})
+	pr := &model.PR{HeadSHA: "abc123"}
+	prCtx := &PRContext{
+		Files: []FileContext{
+			{Path: "internal/ok.go", Status: string(model.FileStatusModified)},
+			{Path: "internal/missing.go", Status: string(model.FileStatusModified)},
+		},
+	}
+
+	err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
+	require.NoError(t, err)
+
+	assert.Equal(t, "package ok\n", prCtx.Files[0].Content)
+	assert.Empty(t, prCtx.Files[1].Content)
+}

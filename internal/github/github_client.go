@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/AtomicWasTaken/surge/internal/model"
@@ -225,7 +226,7 @@ func (c *GitHubClient) GetFiles(ctx context.Context, owner, repo string, prNumbe
 
 // GetFileContent fetches the content of a specific file at a given ref.
 func (c *GitHubClient) GetFileContent(ctx context.Context, owner, repo, path, ref string) (string, error) {
-	requestURL := c.apiURLf("/repos/%s/%s/contents/%s?ref=%s", owner, repo, path, ref)
+	requestURL := c.contentsURL(owner, repo, path, ref)
 
 	body, status, err := c.doJSONRequest(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
@@ -254,6 +255,27 @@ func (c *GitHubClient) GetFileContent(ctx context.Context, owner, repo, path, re
 	}
 
 	return string(decoded), nil
+}
+
+func (c *GitHubClient) contentsURL(owner, repo, path, ref string) string {
+	query := url.Values{}
+	query.Set("ref", ref)
+
+	return c.apiURLf(
+		"/repos/%s/%s/contents/%s?%s",
+		owner,
+		repo,
+		escapeGitHubContentPath(path),
+		query.Encode(),
+	)
+}
+
+func escapeGitHubContentPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
 
 // PostReview posts a review with inline comments and a summary.
