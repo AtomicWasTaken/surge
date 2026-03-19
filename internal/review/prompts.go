@@ -145,7 +145,8 @@ func (pb *PromptBuilder) BuildUserPrompt(pr *PRContext, depth ContextDepth) stri
 	}
 	sb.WriteString("\n")
 
-	if depth == ContextDepthDiffOnly || depth == "" {
+	switch depth {
+	case "", ContextDepthDiffOnly:
 		sb.WriteString("Diff:\n")
 		for _, f := range pr.Files {
 			sb.WriteString("\n--- ")
@@ -154,7 +155,7 @@ func (pb *PromptBuilder) BuildUserPrompt(pr *PRContext, depth ContextDepth) stri
 			sb.WriteString(f.Patch)
 			sb.WriteString("\n")
 		}
-	} else if depth == ContextDepthRelevant || depth == ContextDepthFull {
+	case ContextDepthRelevant, ContextDepthFull:
 		for _, f := range pr.Files {
 			sb.WriteString("\n=== FILE: ")
 			sb.WriteString(f.Path)
