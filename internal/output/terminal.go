@@ -80,6 +80,10 @@ func (t *TerminalOutput) Render(result *model.ReviewResult) {
 				for _, line := range bodyLines {
 					fmt.Printf("    %s\n", line)
 				}
+				if f.Suggestion != "" {
+					fixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00CED1")).Italic(true)
+					fmt.Printf("    %s\n", fixStyle.Render("Fix: "+f.Suggestion))
+				}
 				fmt.Println()
 			}
 		}

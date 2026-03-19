@@ -47,50 +47,72 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	var sb strings.Builder
 	bySeverity := groupBySeverity(result.Findings)
 	findingCount := len(result.Findings)
-	decision := "✅ Approve"
+	decision := "✅ Approved"
 	if !result.Approve {
-		decision = "❌ Request Changes"
+		decision = "❌ Changes Requested"
 	}
 
 	sb.WriteString(CommentMarker(m.commentMarker))
 	sb.WriteString("\n")
 	sb.WriteString(ScopedCommentMarker(m.commentMarker, CommentScopeSummary))
 	sb.WriteString("\n")
-	sb.WriteString("## ⚡ surge Review Summary\n\n")
-	sb.WriteString("| Decision | Findings | Files | Vibe |\n")
-	sb.WriteString("|---|---:|---:|---:|\n")
-	sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d/10 |\n\n", decision, findingCount, result.Stats.FilesReviewed, result.VibeCheck.Score))
 
-	sb.WriteString("### Severity Rollup\n\n")
-	sb.WriteString("| 🔴 Critical | 🟠 High | 🟡 Medium | 🔵 Low | ⚪ Info |\n")
-	sb.WriteString("|---:|---:|---:|---:|---:|\n")
-	sb.WriteString(fmt.Sprintf("| %d | %d | %d | %d | %d |\n\n",
-		len(bySeverity[model.SeverityCritical]),
-		len(bySeverity[model.SeverityHigh]),
-		len(bySeverity[model.SeverityMedium]),
-		len(bySeverity[model.SeverityLow]),
-		len(bySeverity[model.SeverityInfo])))
+	// Header with decision badge
+	sb.WriteString(fmt.Sprintf("## ⚡ surge &nbsp;·&nbsp; %s\n\n", decision))
 
-	sb.WriteString("### Executive Summary\n\n")
+	// Compact stats line
+	sb.WriteString(fmt.Sprintf("> **%d** findings across **%d** files &nbsp;·&nbsp; Vibe **%d/10** %s\n",
+		findingCount, result.Stats.FilesReviewed, result.VibeCheck.Score, vibeBar(result.VibeCheck.Score)))
+
+	// Severity badges inline
+	critCount := len(bySeverity[model.SeverityCritical])
+	highCount := len(bySeverity[model.SeverityHigh])
+	medCount := len(bySeverity[model.SeverityMedium])
+	lowCount := len(bySeverity[model.SeverityLow])
+	infoCount := len(bySeverity[model.SeverityInfo])
+
+	var badges []string
+	if critCount > 0 {
+		badges = append(badges, fmt.Sprintf("🔴 %d critical", critCount))
+	}
+	if highCount > 0 {
+		badges = append(badges, fmt.Sprintf("🟠 %d high", highCount))
+	}
+	if medCount > 0 {
+		badges = append(badges, fmt.Sprintf("🟡 %d medium", medCount))
+	}
+	if lowCount > 0 {
+		badges = append(badges, fmt.Sprintf("🔵 %d low", lowCount))
+	}
+	if infoCount > 0 {
+		badges = append(badges, fmt.Sprintf("⚪ %d info", infoCount))
+	}
+	if len(badges) > 0 {
+		sb.WriteString(fmt.Sprintf("> %s\n", strings.Join(badges, " &nbsp;·&nbsp; ")))
+	}
+	sb.WriteString("\n")
+
+	// Summary
 	sb.WriteString(result.Summary)
 	sb.WriteString("\n\n")
 
 	if len(result.Warnings) > 0 {
-		sb.WriteString("## Warnings\n\n")
+		sb.WriteString("<blockquote>\n\n")
+		sb.WriteString("⚠️ **Warnings**\n\n")
 		for _, warning := range result.Warnings {
 			sb.WriteString(fmt.Sprintf("- %s\n", warning))
 		}
-		sb.WriteString("\n")
+		sb.WriteString("\n</blockquote>\n\n")
 	}
 
-	// Files Overview
+	// Files Overview (collapsed)
 	if len(result.FilesOverview) > 0 {
 		sb.WriteString("<details>\n")
-		sb.WriteString("<summary><strong>📁 Files Changed Overview</strong></summary>\n\n")
+		sb.WriteString("<summary>📁 Files changed</summary>\n\n")
 		sb.WriteString("| File | Changes | Risk |\n")
-		sb.WriteString("|---|---|---|\n")
+		sb.WriteString("|---|---|---:|\n")
 		for _, f := range result.FilesOverview {
-			risk := riskEmoji(f.Risk) + " " + strings.ToUpper(f.Risk)
+			risk := riskEmoji(f.Risk) + " " + f.Risk
 			sb.WriteString(fmt.Sprintf("| `%s` | %s | %s |\n", sanitizeTableCell(f.Path), sanitizeTableCell(f.Changes), sanitizeTableCell(risk)))
 		}
 		sb.WriteString("\n</details>\n\n")
@@ -98,58 +120,62 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 
 	// Findings by Severity
 	if len(result.Findings) > 0 {
-		sb.WriteString("## 🧭 Findings\n\n")
+		sb.WriteString("### Findings\n\n")
 		for _, sev := range []model.Severity{model.SeverityCritical, model.SeverityHigh, model.SeverityMedium, model.SeverityLow, model.SeverityInfo} {
 			findings := bySeverity[sev]
 			if len(findings) == 0 {
 				continue
 			}
-			emoji := severityEmoji(sev)
-			sb.WriteString(fmt.Sprintf("### %s %s (%d)\n\n", emoji, severityLabel(sev), len(findings)))
-			for i, f := range findings {
+			for _, f := range findings {
 				location := f.File
 				if f.Line > 0 {
 					location = fmt.Sprintf("%s:%d", f.File, f.Line)
 				}
-				sb.WriteString("<details>\n")
-				sb.WriteString(fmt.Sprintf("<summary><strong>%s</strong> · <code>%s</code> · <code>%s</code></summary>\n\n",
-					sanitizeTableCell(f.Title), sanitizeInlineCode(location), f.Category))
+				emoji := severityEmoji(sev)
+				sb.WriteString(fmt.Sprintf("<details>\n<summary>%s <strong>%s</strong> &nbsp;<code>%s</code></summary>\n\n",
+					emoji, sanitizeTableCell(f.Title), sanitizeInlineCode(location)))
+				sb.WriteString(fmt.Sprintf("**Category:** `%s` &nbsp;·&nbsp; **Severity:** %s\n\n", f.Category, severityLabel(sev)))
 				sb.WriteString(f.Body)
-				sb.WriteString("\n\n</details>\n\n")
-				if i != len(findings)-1 {
-					sb.WriteString("---\n\n")
+				sb.WriteString("\n")
+				if f.Suggestion != "" {
+					sb.WriteString("\n**🤖 Agent fix prompt:**\n")
+					sb.WriteString(fmt.Sprintf("> %s\n", f.Suggestion))
 				}
+				sb.WriteString("\n</details>\n\n")
 			}
 		}
 	} else {
-		sb.WriteString("## 🧭 Findings\n\n")
-		sb.WriteString("No actionable findings were reported.\n\n")
+		sb.WriteString("### Findings\n\nNo issues found — nice work.\n\n")
 	}
 
-	// Vibe Check
-	sb.WriteString("## 🎯 Vibe Check\n\n")
-	sb.WriteString(fmt.Sprintf("**Score:** %d/10 %s\n\n", result.VibeCheck.Score, vibeBar(result.VibeCheck.Score)))
-	sb.WriteString(fmt.Sprintf("**Verdict:** %s\n\n", result.VibeCheck.Verdict))
+	// Vibe Check (compact)
+	sb.WriteString("<details>\n")
+	sb.WriteString(fmt.Sprintf("<summary>🎯 Vibe Check &nbsp;·&nbsp; %d/10 &nbsp;—&nbsp; %s</summary>\n\n", result.VibeCheck.Score, result.VibeCheck.Verdict))
 	if len(result.VibeCheck.Flags) > 0 {
-		sb.WriteString("**Flags**\n")
-		for _, flag := range result.VibeCheck.Flags {
-			sb.WriteString(fmt.Sprintf("- `%s`\n", flag))
+		sb.WriteString("**Flags:** ")
+		for i, flag := range result.VibeCheck.Flags {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(fmt.Sprintf("`%s`", flag))
 		}
 		sb.WriteString("\n")
 	}
+	sb.WriteString("\n</details>\n\n")
 
 	// Recommendations
 	if len(result.Recommendations) > 0 {
-		sb.WriteString("## ✅ Recommended Next Steps\n\n")
+		sb.WriteString("<details>\n")
+		sb.WriteString("<summary>✅ Recommended next steps</summary>\n\n")
 		for _, rec := range result.Recommendations {
 			sb.WriteString(fmt.Sprintf("- [ ] %s\n", rec))
 		}
-		sb.WriteString("\n")
+		sb.WriteString("\n</details>\n\n")
 	}
 
 	// Footer
-	sb.WriteString("---\n\n")
-	sb.WriteString("> Generated by [surge](https://github.com/AtomicWasTaken/surge) · AI-powered PR reviews\n")
+	sb.WriteString("---\n")
+	sb.WriteString("<sub>Generated by <a href=\"https://github.com/AtomicWasTaken/surge\">surge</a> · AI-powered PR reviews</sub>\n")
 
 	return sb.String()
 }
