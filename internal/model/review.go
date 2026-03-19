@@ -92,6 +92,7 @@ type PRComment struct {
 type PRReview struct {
 	ID        int64
 	Body      string
+	State     string
 	Author    string
 	IsBot     bool
 	CreatedAt string
