@@ -47,13 +47,13 @@ func TestDismissReviewUsesDocumentedPayload(t *testing.T) {
 
 func TestGetFileContentEscapesPathAndRef(t *testing.T) {
 	var (
-		gotPath     string
-		gotURI      string
-		gotRawQuery string
+		gotEscapedPath string
+		gotURI         string
+		gotRawQuery    string
 	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
+		gotEscapedPath = r.URL.EscapedPath()
 		gotURI = r.RequestURI
 		gotRawQuery = r.URL.RawQuery
 		w.WriteHeader(http.StatusOK)
@@ -68,7 +68,7 @@ func TestGetFileContentEscapesPathAndRef(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "hello", content)
-	assert.Equal(t, "/repos/octo/surge/contents/dir with spaces/a#b?.go", gotPath)
+	assert.Equal(t, "/repos/octo/surge/contents/dir%20with%20spaces/a%23b%3F.go", gotEscapedPath)
 	assert.Equal(t, "/repos/octo/surge/contents/dir%20with%20spaces/a%23b%3F.go?ref=feature%2Ftest+branch", gotURI)
 	assert.Equal(t, "ref=feature%2Ftest+branch", gotRawQuery)
 }

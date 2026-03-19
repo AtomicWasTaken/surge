@@ -130,17 +130,29 @@ func TestPromptBuilder_SystemPromptForCategoriesEmptySet(t *testing.T) {
 	pb := NewPromptBuilder()
 	prompt := pb.SystemPromptForCategories([]model.Category{})
 
+	assert.Contains(t, prompt, "- none: No review categories are enabled for this run.")
+	assert.NotContains(t, prompt, "- security:")
+	assert.NotContains(t, prompt, "- performance:")
+	assert.NotContains(t, prompt, "- logic:")
+	assert.NotContains(t, prompt, "- maintainability:")
+	assert.NotContains(t, prompt, "- vibe:")
+}
+
+func TestPromptBuilderFormatCategoryDefinitionsEmptySet(t *testing.T) {
+	pb := NewPromptBuilder()
+	assert.Equal(t, "- none: No review categories are enabled for this run.", pb.formatCategoryDefinitions([]model.Category{}))
+}
+
+func TestPromptBuilderSystemPromptForCategoriesNilUsesDefaults(t *testing.T) {
+	pb := NewPromptBuilder()
+	prompt := pb.SystemPromptForCategories(nil)
+
 	assert.Contains(t, prompt, "- security:")
 	assert.Contains(t, prompt, "- performance:")
 	assert.Contains(t, prompt, "- logic:")
 	assert.Contains(t, prompt, "- maintainability:")
 	assert.Contains(t, prompt, "- vibe:")
 	assert.NotContains(t, prompt, "- none:")
-}
-
-func TestPromptBuilderFormatCategoryDefinitionsEmptySet(t *testing.T) {
-	pb := NewPromptBuilder()
-	assert.Equal(t, "- none: No review categories are enabled for this run.", pb.formatCategoryDefinitions([]model.Category{}))
 }
 
 func TestPromptBuilder_BuildUserPrompt(t *testing.T) {

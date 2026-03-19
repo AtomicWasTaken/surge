@@ -61,7 +61,7 @@ func (pb *PromptBuilder) SystemPrompt() string {
 // SystemPromptForCategories returns the system prompt scoped to the configured categories.
 func (pb *PromptBuilder) SystemPromptForCategories(categories []model.Category) string {
 	enabledCategories := categories
-	if len(enabledCategories) == 0 {
+	if enabledCategories == nil {
 		enabledCategories = enabledReviewCategories()
 	}
 
