@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/AtomicWasTaken/surge/compare/v0.3.1...v0.3.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* make GitHub PR review reruns idempotent ([1c724fd](https://github.com/AtomicWasTaken/surge/commit/1c724fdc46be7d37b529f4d48903e472f46b9002))
+* make GitHub PR review reruns idempotent ([b4a55c1](https://github.com/AtomicWasTaken/surge/commit/b4a55c1c3bdc9c414e8d3a65e53843570924d392))
+
 ## [0.3.1](https://github.com/AtomicWasTaken/surge/compare/v0.3.0...v0.3.1) (2026-03-18)
 
 
