@@ -25,8 +25,9 @@ type Finding struct {
 	Category Category `json:"category"`
 	File     string   `json:"file,omitempty"`
 	Line     int      `json:"line,omitempty"`
-	Title    string   `json:"title"`
-	Body     string   `json:"body"`
+	Title      string `json:"title"`
+	Body       string `json:"body"`
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // Severity represents how severe a finding is.

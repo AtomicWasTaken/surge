@@ -80,6 +80,10 @@ func (t *TerminalOutput) Render(result *model.ReviewResult) {
 				for _, line := range bodyLines {
 					fmt.Printf("    %s\n", line)
 				}
+				if f.Suggestion != "" {
+					fixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00CED1")).Italic(true)
+					fmt.Printf("    %s\n", fixStyle.Render("Fix: "+sanitizeTerminalText(f.Suggestion)))
+				}
 				fmt.Println()
 			}
 		}
@@ -179,6 +183,37 @@ func wrapText(text string, width int) []string {
 	}
 
 	return lines
+}
+
+// sanitizeTerminalText strips ANSI escape sequences and control characters
+// from untrusted text to prevent terminal injection.
+func sanitizeTerminalText(v string) string {
+	var sb strings.Builder
+	sb.Grow(len(v))
+	i := 0
+	for i < len(v) {
+		b := v[i]
+		// Strip ANSI escape sequences (ESC [ ... final byte)
+		if b == 0x1b && i+1 < len(v) && v[i+1] == '[' {
+			i += 2
+			for i < len(v) && v[i] >= 0x20 && v[i] <= 0x3F {
+				i++
+			}
+			if i < len(v) {
+				i++ // skip final byte
+			}
+			continue
+		}
+		// Replace control characters (except space) with space
+		if b < 0x20 && b != '\n' {
+			sb.WriteByte(' ')
+		} else {
+			sb.WriteByte(b)
+		}
+		i++
+	}
+	// Collapse newlines to spaces for single-line display
+	return strings.ReplaceAll(sb.String(), "\n", " ")
 }
 
 // RenderError prints an error message to stderr.

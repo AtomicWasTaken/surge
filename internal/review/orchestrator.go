@@ -348,11 +348,16 @@ func (o *Orchestrator) buildInlineComments(result *model.ReviewResult, files []m
 			continue
 		}
 
-		body := fmt.Sprintf("**%s** %s\n\n%s",
-			strings.ToUpper(string(finding.Severity)),
-			finding.Title,
-			finding.Body,
+		emoji := output.SeverityEmoji(finding.Severity)
+		body := fmt.Sprintf("%s **%s** — %s\n\n%s",
+			emoji,
+			output.SanitizeHTML(finding.Title),
+			output.SanitizeHTML(strings.ToUpper(string(finding.Severity))),
+			output.SanitizeHTML(finding.Body),
 		)
+		if suggestion := output.RenderAgentSuggestion(finding.Suggestion); suggestion != "" {
+			body += "\n\n" + suggestion
+		}
 
 		comments = append(comments, model.ReviewComment{
 			Path:     finding.File,

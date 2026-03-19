@@ -452,6 +452,47 @@ func TestFormatContextWarnings(t *testing.T) {
 	assert.Equal(t, "Skip reasons: a.go (not found), b.go (permission denied).", warnings[1])
 }
 
+func TestBuildInlineCommentsWithSuggestion(t *testing.T) {
+	cfg := &config.Config{CommentMarker: "SURGE"}
+	o := NewOrchestrator(nil, &stubPRClient{}, cfg)
+
+	result := &model.ReviewResult{
+		Findings: []model.Finding{
+			{
+				Severity:   model.SeverityHigh,
+				File:       "main.go",
+				Line:       2,
+				Title:      "SQL injection <script>",
+				Body:       "User input is <b>unsanitized</b>",
+				Suggestion: "Parameterize the query in `handler()` to prevent injection.",
+			},
+			{
+				Severity: model.SeverityLow,
+				File:     "main.go",
+				Line:     2,
+				Title:    "No suggestion finding",
+				Body:     "Minor style issue.",
+			},
+		},
+	}
+	files := []model.FileChange{
+		{Path: "main.go", Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"},
+	}
+
+	comments := o.buildInlineComments(result, files)
+	require.Len(t, comments, 2)
+
+	// First comment: has suggestion, HTML escaped
+	assert.Contains(t, comments[0].Body, "🟠")
+	assert.Contains(t, comments[0].Body, "&lt;script&gt;")
+	assert.Contains(t, comments[0].Body, "&lt;b&gt;unsanitized&lt;/b&gt;")
+	assert.Contains(t, comments[0].Body, "🤖 Agent fix prompt:")
+	assert.Contains(t, comments[0].Body, "Parameterize the query")
+
+	// Second comment: no suggestion block
+	assert.NotContains(t, comments[1].Body, "Agent fix prompt")
+}
+
 func TestSanitizeContextWarningReason(t *testing.T) {
 	assert.Equal(t, "not found", sanitizeContextWarningReason(errors.New("file not found")))
 	assert.Equal(t, "permission denied", sanitizeContextWarningReason(errors.New("forbidden by policy")))
