@@ -5,7 +5,7 @@
 **surge** is an AI-powered PR code review CLI tool written in Go. It analyzes pull request diffs and posts structured reviews with security findings, performance issues, logic bugs, code quality concerns, and a distinctive "vibe codability" check.
 
 - **Repo**: github.com/AtomicWasTaken/surge
-- **Go version**: 1.23
+- **Go version**: 1.26.1
 - **Main package**: `cmd/surge/main.go`
 
 ## Versioning

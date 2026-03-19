@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -247,7 +248,9 @@ func (c *LiteLLMClient) doJSONPost(ctx context.Context, url string, payload map[
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -373,9 +376,9 @@ func parseResponsesSSE(body []byte) (string, int, int, string, error) {
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
 			return nil
 		}
-		if ev.Error.Message != "" {
-			return fmt.Errorf(ev.Error.Message)
-		}
+			if ev.Error.Message != "" {
+				return errors.New(ev.Error.Message)
+			}
 		switch ev.Type {
 		case "response.output_text.delta":
 			content.WriteString(ev.Delta)

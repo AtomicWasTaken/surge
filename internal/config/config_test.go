@@ -24,11 +24,11 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_EnvOverride(t *testing.T) {
-	os.Setenv("SURGE_GITHUB_TOKEN", "test-token")
-	os.Setenv("SURGE_AI_API_KEY", "test-api-key")
+	assert.NoError(t, os.Setenv("SURGE_GITHUB_TOKEN", "test-token"))
+	assert.NoError(t, os.Setenv("SURGE_AI_API_KEY", "test-api-key"))
 	defer func() {
-		os.Unsetenv("SURGE_GITHUB_TOKEN")
-		os.Unsetenv("SURGE_AI_API_KEY")
+		assert.NoError(t, os.Unsetenv("SURGE_GITHUB_TOKEN"))
+		assert.NoError(t, os.Unsetenv("SURGE_AI_API_KEY"))
 	}()
 
 	cfg, err := Load("")
@@ -78,8 +78,10 @@ func TestConfig_Validate(t *testing.T) {
 }
 
 func TestExpandEnvVar(t *testing.T) {
-	os.Setenv("TEST_VAR", "test-value")
-	defer os.Unsetenv("TEST_VAR")
+	assert.NoError(t, os.Setenv("TEST_VAR", "test-value"))
+	defer func() {
+		assert.NoError(t, os.Unsetenv("TEST_VAR"))
+	}()
 
 	result := expandEnv("${TEST_VAR}")
 	assert.Equal(t, "test-value", result)

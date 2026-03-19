@@ -56,7 +56,9 @@ func (c *GitHubClient) doRequest(ctx context.Context, method, url string, body i
 	if err != nil {
 		return nil, 0, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -147,7 +149,9 @@ func (c *GitHubClient) GetDiff(ctx context.Context, owner, repo string, prNumber
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch diff: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
