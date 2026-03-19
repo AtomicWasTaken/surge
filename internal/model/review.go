@@ -6,6 +6,7 @@ type ReviewResult struct {
 	FilesOverview   []FileOverview `json:"filesOverview"`
 	Findings        []Finding      `json:"findings"`
 	VibeCheck       VibeCheck      `json:"vibeCheck"`
+	Warnings        []string       `json:"warnings,omitempty"`
 	Recommendations []string       `json:"recommendations"`
 	Approve         bool           `json:"approve"`
 	Stats           ReviewStats    `json:"stats,omitempty"`

@@ -114,12 +114,54 @@ func TestPromptBuilder_SystemPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "context_blind")
 }
 
+func TestPromptBuilder_SystemPromptForCategories(t *testing.T) {
+	pb := NewPromptBuilder()
+	prompt := pb.SystemPromptForCategories([]model.Category{model.CategorySecurity, model.CategoryLogic})
+
+	assert.Contains(t, prompt, "- security:")
+	assert.Contains(t, prompt, "- logic:")
+	assert.NotContains(t, prompt, "- performance:")
+	assert.NotContains(t, prompt, "- maintainability:")
+	assert.NotContains(t, prompt, "- vibe:")
+	assert.Contains(t, prompt, "Only emit findings whose category is in the enabled category list above.")
+}
+
+func TestPromptBuilder_SystemPromptForCategoriesEmptySet(t *testing.T) {
+	pb := NewPromptBuilder()
+	prompt := pb.SystemPromptForCategories([]model.Category{})
+
+	assert.Contains(t, prompt, "- none: No review categories are enabled for this run.")
+	assert.Contains(t, prompt, `If the enabled category list says none, you must return "findings": [].`)
+	assert.NotContains(t, prompt, "- security:")
+	assert.NotContains(t, prompt, "- performance:")
+	assert.NotContains(t, prompt, "- logic:")
+	assert.NotContains(t, prompt, "- maintainability:")
+	assert.NotContains(t, prompt, "- vibe:")
+}
+
+func TestPromptBuilderFormatCategoryDefinitionsEmptySet(t *testing.T) {
+	pb := NewPromptBuilder()
+	assert.Equal(t, "- none: No review categories are enabled for this run.", pb.formatCategoryDefinitions([]model.Category{}))
+}
+
+func TestPromptBuilderSystemPromptForCategoriesNilUsesDefaults(t *testing.T) {
+	pb := NewPromptBuilder()
+	prompt := pb.SystemPromptForCategories(nil)
+
+	assert.Contains(t, prompt, "- security:")
+	assert.Contains(t, prompt, "- performance:")
+	assert.Contains(t, prompt, "- logic:")
+	assert.Contains(t, prompt, "- maintainability:")
+	assert.Contains(t, prompt, "- vibe:")
+	assert.NotContains(t, prompt, "- none:")
+}
+
 func TestPromptBuilder_BuildUserPrompt(t *testing.T) {
 	pb := NewPromptBuilder()
 
 	prCtx := &PRContext{
-		Title:       "Add user authentication",
-		Body:        "Implements JWT-based auth",
+		Title:        "Add user authentication",
+		Body:         "Implements JWT-based auth",
 		ChangedFiles: 2,
 		Files: []FileContext{
 			{Path: "auth.go", Status: "modified", Additions: 10, Deletions: 2, Patch: "+ JWT auth"},
@@ -141,14 +183,14 @@ func TestPromptBuilder_BuildUserPrompt_RelevantContext(t *testing.T) {
 	pb := NewPromptBuilder()
 
 	prCtx := &PRContext{
-		Title:       "Refactor database layer",
+		Title:        "Refactor database layer",
 		ChangedFiles: 1,
 		Files: []FileContext{
 			{
-				Path:     "db.go",
-				Status:   "modified",
-				Patch:    "@@ -1,3 +1,4 @@",
-				Content:  "full file content here",
+				Path:    "db.go",
+				Status:  "modified",
+				Patch:   "@@ -1,3 +1,4 @@",
+				Content: "full file content here",
 			},
 		},
 	}

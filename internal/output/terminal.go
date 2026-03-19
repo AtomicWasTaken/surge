@@ -19,10 +19,10 @@ func NewTerminalOutput() *TerminalOutput {
 	return &TerminalOutput{
 		severityStyle: map[model.Severity]lipgloss.Style{
 			model.SeverityCritical: lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true),
-			model.SeverityHigh:    lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C00")).Bold(true),
-			model.SeverityMedium:  lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")),
-			model.SeverityLow:    lipgloss.NewStyle().Foreground(lipgloss.Color("#1E90FF")),
-			model.SeverityInfo:   lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")),
+			model.SeverityHigh:     lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8C00")).Bold(true),
+			model.SeverityMedium:   lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")),
+			model.SeverityLow:      lipgloss.NewStyle().Foreground(lipgloss.Color("#1E90FF")),
+			model.SeverityInfo:     lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")),
 		},
 	}
 }
@@ -39,6 +39,15 @@ func (t *TerminalOutput) Render(result *model.ReviewResult) {
 		fmt.Println("  " + line)
 	}
 	fmt.Println()
+
+	if len(result.Warnings) > 0 {
+		fmt.Println("  Warnings")
+		fmt.Println(strings.Repeat("─", 60))
+		for _, warning := range result.Warnings {
+			RenderWarning(warning)
+		}
+		fmt.Println()
+	}
 
 	// Findings
 	if len(result.Findings) > 0 {

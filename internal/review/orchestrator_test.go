@@ -19,6 +19,8 @@ type stubPRClient struct {
 	comments                []*model.PRComment
 	reviews                 []*model.PRReview
 	reviewComments          map[int64][]*model.PRReviewComment
+	fileContents            map[string]string
+	fileContentErrs         map[string]error
 	deletedIssueCommentIDs  []int64
 	deletedReviewCommentIDs []int64
 	deletedReviewIDs        []int64
@@ -49,7 +51,11 @@ func (s *stubPRClient) GetFiles(ctx context.Context, owner, repo string, prNumbe
 }
 
 func (s *stubPRClient) GetFileContent(ctx context.Context, owner, repo, path, ref string) (string, error) {
-	return "", nil
+	key := path + "@" + ref
+	if err := s.fileContentErrs[key]; err != nil {
+		return "", err
+	}
+	return s.fileContents[key], nil
 }
 
 func (s *stubPRClient) PostReview(ctx context.Context, owner, repo string, prNumber int, review *model.ReviewInput) error {
@@ -363,4 +369,93 @@ func TestIsSurgeCommentRecognizesCurrentAndLegacyMarkers(t *testing.T) {
 	assert.True(t, o.isSurgeComment("<!-- SURGE_SUMMARY -->"))
 	assert.True(t, o.isSurgeComment(output.ScopedCommentMarker("SURGE", output.CommentScopeInline)))
 	assert.False(t, o.isSurgeComment("plain comment"))
+}
+
+func TestOrchestratorFilterCategoriesUsesEnabledConfig(t *testing.T) {
+	o := NewOrchestrator(nil, &stubPRClient{}, &config.Config{
+		Categories: config.CategoriesConfig{
+			Security:        true,
+			Performance:     false,
+			Logic:           true,
+			Maintainability: false,
+			Vibe:            false,
+		},
+	})
+
+	prompt := o.filterCategories()
+
+	assert.Contains(t, prompt, "- security:")
+	assert.Contains(t, prompt, "- logic:")
+	assert.NotContains(t, prompt, "- performance:")
+	assert.NotContains(t, prompt, "- maintainability:")
+	assert.NotContains(t, prompt, "- vibe:")
+}
+
+func TestEnrichPRContextLoadsFullFileContent(t *testing.T) {
+	client := &stubPRClient{
+		fileContents: map[string]string{
+			"internal/app.go@abc123": "package app\n",
+		},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{})
+	pr := &model.PR{HeadSHA: "abc123"}
+	prCtx := &PRContext{
+		Files: []FileContext{
+			{Path: "internal/app.go", Status: string(model.FileStatusModified)},
+			{Path: "internal/deleted.go", Status: string(model.FileStatusDeleted)},
+		},
+	}
+
+	warnings, err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+
+	assert.Equal(t, "package app\n", prCtx.Files[0].Content)
+	assert.Empty(t, prCtx.Files[1].Content)
+}
+
+func TestEnrichPRContextContinuesWhenFileContentLookupFails(t *testing.T) {
+	client := &stubPRClient{
+		fileContents: map[string]string{
+			"internal/ok.go@abc123": "package ok\n",
+		},
+		fileContentErrs: map[string]error{
+			"internal/missing.go@abc123": errors.New("not found"),
+		},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{})
+	pr := &model.PR{HeadSHA: "abc123"}
+	prCtx := &PRContext{
+		Files: []FileContext{
+			{Path: "internal/ok.go", Status: string(model.FileStatusModified)},
+			{Path: "internal/missing.go", Status: string(model.FileStatusModified)},
+		},
+	}
+
+	warnings, err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
+	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, "internal/missing.go", warnings[0].path)
+
+	assert.Equal(t, "package ok\n", prCtx.Files[0].Content)
+	assert.Empty(t, prCtx.Files[1].Content)
+}
+
+func TestFormatContextWarnings(t *testing.T) {
+	warnings := formatContextWarnings([]contextWarning{
+		{path: "a.go", err: errors.New("not found")},
+		{path: "b.go", err: errors.New("forbidden")},
+	})
+
+	require.Len(t, warnings, 2)
+	assert.Equal(t, "Full context was only partially loaded; skipped 2 file(s): a.go, b.go.", warnings[0])
+	assert.Equal(t, "Skip reasons: a.go (not found), b.go (permission denied).", warnings[1])
+}
+
+func TestSanitizeContextWarningReason(t *testing.T) {
+	assert.Equal(t, "not found", sanitizeContextWarningReason(errors.New("file not found")))
+	assert.Equal(t, "permission denied", sanitizeContextWarningReason(errors.New("forbidden by policy")))
+	assert.Equal(t, "timeout", sanitizeContextWarningReason(errors.New("deadline exceeded")))
+	assert.Equal(t, "request failed", sanitizeContextWarningReason(errors.New("bad gateway")))
+	assert.Equal(t, "unknown error", sanitizeContextWarningReason(nil))
 }

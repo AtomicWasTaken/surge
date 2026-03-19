@@ -75,6 +75,14 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	sb.WriteString(result.Summary)
 	sb.WriteString("\n\n")
 
+	if len(result.Warnings) > 0 {
+		sb.WriteString("## Warnings\n\n")
+		for _, warning := range result.Warnings {
+			sb.WriteString(fmt.Sprintf("- %s\n", warning))
+		}
+		sb.WriteString("\n")
+	}
+
 	// Files Overview
 	if len(result.FilesOverview) > 0 {
 		sb.WriteString("<details>\n")
