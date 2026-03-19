@@ -26,7 +26,8 @@ func (j *JSONOutput) Render(result *model.ReviewResult) string {
 			"verdict": result.VibeCheck.Verdict,
 			"flags":   result.VibeCheck.Flags,
 		},
-		"findings": result.Findings,
+		"findings":        result.Findings,
+		"warnings":        result.Warnings,
 		"recommendations": result.Recommendations,
 		"approve":         result.Approve,
 		"stats": map[string]interface{}{

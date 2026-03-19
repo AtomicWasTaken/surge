@@ -406,8 +406,9 @@ func TestEnrichPRContextLoadsFullFileContent(t *testing.T) {
 		},
 	}
 
-	err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
+	warnings, err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
 	require.NoError(t, err)
+	assert.Empty(t, warnings)
 
 	assert.Equal(t, "package app\n", prCtx.Files[0].Content)
 	assert.Empty(t, prCtx.Files[1].Content)
@@ -431,9 +432,23 @@ func TestEnrichPRContextContinuesWhenFileContentLookupFails(t *testing.T) {
 		},
 	}
 
-	err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
+	warnings, err := o.enrichPRContext(context.Background(), "octo", "surge", pr, prCtx, ContextDepthFull)
 	require.NoError(t, err)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, "internal/missing.go", warnings[0].path)
 
 	assert.Equal(t, "package ok\n", prCtx.Files[0].Content)
 	assert.Empty(t, prCtx.Files[1].Content)
+}
+
+func TestFormatContextWarnings(t *testing.T) {
+	warnings := formatContextWarnings([]contextWarning{
+		{path: "a.go", err: errors.New("not found")},
+		{path: "b.go", err: errors.New("forbidden")},
+	})
+
+	require.Len(t, warnings, 3)
+	assert.Equal(t, "Full context was only partially loaded; skipped 2 file(s): a.go, b.go.", warnings[0])
+	assert.Equal(t, "Skipped a.go: not found.", warnings[1])
+	assert.Equal(t, "Skipped b.go: forbidden.", warnings[2])
 }

@@ -42,6 +42,11 @@ type cleanupStats struct {
 	failedOperations      int
 }
 
+type contextWarning struct {
+	path string
+	err  error
+}
+
 // NewOrchestrator creates a new review orchestrator.
 func NewOrchestrator(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) *Orchestrator {
 	return &Orchestrator{
@@ -86,7 +91,8 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 	if depth == "" {
 		depth = ContextDepthDiffOnly
 	}
-	if err := o.enrichPRContext(ctx, owner, repo, pr, prCtx, depth); err != nil {
+	contextWarnings, err := o.enrichPRContext(ctx, owner, repo, pr, prCtx, depth)
+	if err != nil {
 		return nil, fmt.Errorf("failed to load PR context: %w", err)
 	}
 
@@ -129,6 +135,7 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 		TokensOut:     aiResp.TokensOut,
 		Duration:      time.Since(start).Seconds(),
 	}
+	result.Warnings = formatContextWarnings(contextWarnings)
 
 	// Step 9: Output
 	if o.cfg.Output.Format == "json" {
@@ -169,11 +176,12 @@ func (o *Orchestrator) buildPRContext(pr *model.PR, files []model.FileChange) *P
 	return prCtx
 }
 
-func (o *Orchestrator) enrichPRContext(ctx context.Context, owner, repo string, pr *model.PR, prCtx *PRContext, depth ContextDepth) error {
+func (o *Orchestrator) enrichPRContext(ctx context.Context, owner, repo string, pr *model.PR, prCtx *PRContext, depth ContextDepth) ([]contextWarning, error) {
 	if depth != ContextDepthFull {
-		return nil
+		return nil, nil
 	}
 
+	var warnings []contextWarning
 	for i := range prCtx.Files {
 		if !supportsFileContent(prCtx.Files[i].Status) {
 			continue
@@ -181,15 +189,13 @@ func (o *Orchestrator) enrichPRContext(ctx context.Context, owner, repo string, 
 
 		content, err := o.ghClient.GetFileContent(ctx, owner, repo, prCtx.Files[i].Path, pr.HeadSHA)
 		if err != nil {
-			if o.cfg.Verbose {
-				fmt.Printf("[debug] skipped full context for %s at %s: %v\n", prCtx.Files[i].Path, pr.HeadSHA, err)
-			}
+			warnings = append(warnings, contextWarning{path: prCtx.Files[i].Path, err: err})
 			continue
 		}
 		prCtx.Files[i].Content = content
 	}
 
-	return nil
+	return warnings, nil
 }
 
 func (o *Orchestrator) filterCategories() string {
@@ -220,6 +226,27 @@ func (o *Orchestrator) enabledCategories() []model.Category {
 
 func supportsFileContent(status string) bool {
 	return status != string(model.FileStatusDeleted)
+}
+
+func formatContextWarnings(warnings []contextWarning) []string {
+	if len(warnings) == 0 {
+		return nil
+	}
+
+	paths := make([]string, len(warnings))
+	for i, warning := range warnings {
+		paths[i] = warning.path
+	}
+
+	messages := []string{
+		fmt.Sprintf("Full context was only partially loaded; skipped %d file(s): %s.", len(warnings), strings.Join(paths, ", ")),
+	}
+
+	for _, warning := range warnings {
+		messages = append(messages, fmt.Sprintf("Skipped %s: %v.", warning.path, warning.err))
+	}
+
+	return messages
 }
 
 func (o *Orchestrator) postReview(ctx context.Context, owner, repo string, prNumber int, result *model.ReviewResult, files []model.FileChange) error {

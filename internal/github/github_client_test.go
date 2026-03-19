@@ -72,3 +72,14 @@ func TestGetFileContentEscapesPathAndRef(t *testing.T) {
 	assert.Equal(t, "/repos/octo/surge/contents/dir%20with%20spaces/a%23b%3F.go?ref=feature%2Ftest+branch", gotURI)
 	assert.Equal(t, "ref=feature%2Ftest+branch", gotRawQuery)
 }
+
+func TestExpectStatus(t *testing.T) {
+	assert.True(t, expectStatus(http.StatusCreated, http.StatusOK, http.StatusCreated))
+	assert.False(t, expectStatus(http.StatusBadRequest, http.StatusOK, http.StatusCreated))
+}
+
+func TestGitHubAPIError(t *testing.T) {
+	err := githubAPIError(http.StatusBadGateway, []byte(`{"message":"upstream failed"}`))
+	require.Error(t, err)
+	assert.Equal(t, `GitHub API error (502): {"message":"upstream failed"}`, err.Error())
+}

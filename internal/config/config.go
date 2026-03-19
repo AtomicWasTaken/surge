@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,7 +112,9 @@ func Load(configPath string) (*Config, error) {
 	v.SetEnvPrefix("SURGE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-	bindEnvironment(v)
+	if err := bindEnvironment(v); err != nil {
+		return nil, fmt.Errorf("failed to bind environment variables: %w", err)
+	}
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -146,7 +149,8 @@ func configureConfigSources(v *viper.Viper, configPath string) {
 	v.AddConfigPath("/etc/surge")
 }
 
-func bindEnvironment(v *viper.Viper) {
+func bindEnvironment(v *viper.Viper) error {
+	var errs []error
 	for _, binding := range []envBinding{
 		{key: "github.token", env: "SURGE_GITHUB_TOKEN"},
 		{key: "github.owner", env: "SURGE_GITHUB_OWNER"},
@@ -169,8 +173,11 @@ func bindEnvironment(v *viper.Viper) {
 		{key: "enablePRLabels", env: "SURGE_ENABLE_PR_LABELS"},
 		{key: "prLabelPrefix", env: "SURGE_PR_LABEL_PREFIX"},
 	} {
-		_ = v.BindEnv(binding.key, binding.env)
+		if err := v.BindEnv(binding.key, binding.env); err != nil {
+			errs = append(errs, fmt.Errorf("%s -> %s: %w", binding.key, binding.env, err))
+		}
 	}
+	return errors.Join(errs...)
 }
 
 func applyDefaults(v *viper.Viper) {
