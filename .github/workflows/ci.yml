@@ -28,6 +28,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.8.0
+          install-mode: goinstall
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
