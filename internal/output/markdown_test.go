@@ -112,6 +112,20 @@ func TestRenderSummary_SuggestionWithSpecialCharsIsEscaped(t *testing.T) {
 	assertContains(t, rendered, "&gt; nested quote")
 }
 
+func TestRenderSummary_ZeroFindingsShowsBadgeLine(t *testing.T) {
+	out := NewMarkdownOutput("SURGE")
+	result := &model.ReviewResult{
+		Summary:   "All good.",
+		Findings:  nil,
+		VibeCheck: model.VibeCheck{Score: 10, Verdict: "Perfect"},
+		Approve:   true,
+		Stats:     model.ReviewStats{FilesReviewed: 2},
+	}
+
+	rendered := out.RenderSummary(result)
+	assertContains(t, rendered, "⚪ 0 findings")
+}
+
 func TestSanitizeHTML(t *testing.T) {
 	tests := []struct {
 		input string

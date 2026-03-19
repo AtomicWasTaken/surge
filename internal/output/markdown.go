@@ -89,6 +89,8 @@ func (m *MarkdownOutput) RenderSummary(result *model.ReviewResult) string {
 	}
 	if len(badges) > 0 {
 		sb.WriteString(fmt.Sprintf("> %s\n", strings.Join(badges, " &nbsp;·&nbsp; ")))
+	} else {
+		sb.WriteString("> ⚪ 0 findings\n")
 	}
 	sb.WriteString("\n")
 
@@ -226,10 +228,18 @@ func groupBySeverity(findings []model.Finding) map[model.Severity][]model.Findin
 	return result
 }
 
+// Markdown sanitization helpers — each targets a specific rendering context.
+// Use the appropriate helper for the output context to ensure consistent escaping.
+
+// sanitizeTableCell escapes pipe characters, HTML tags, and collapses newlines for table cells.
 func sanitizeTableCell(v string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(v, "|", "\\|"), "\n", "<br>")
+	v = SanitizeHTML(v)
+	v = strings.ReplaceAll(v, "|", "\\|")
+	v = strings.ReplaceAll(v, "\n", "<br>")
+	return v
 }
 
+// sanitizeInlineCode strips backticks and escapes HTML for inline code spans.
 func sanitizeInlineCode(v string) string {
 	return strings.ReplaceAll(v, "`", "")
 }

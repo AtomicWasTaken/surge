@@ -83,7 +83,7 @@ text before or after the JSON. The JSON schema is:
       "line": 42,
       "title": "Brief finding title",
       "body": "Detailed explanation (markdown supported, 1-3 sentences)",
-      "suggestion": "A concise, actionable instruction for an AI coding agent to fix this issue. Write it as a direct command, e.g. 'Rotate the refresh token after each use in handleTokenRefresh() by generating a new token and invalidating the old one.' Include the specific function/file, what to change, and why."
+      "suggestion": "(optional) A concise, actionable instruction for an AI coding agent to fix this issue. Write it as a direct command, e.g. 'Rotate the refresh token after each use in handleTokenRefresh() by generating a new token and invalidating the old one.' Include the specific function/file, what to change, and why. Omit this field for info-level findings or when no concrete fix applies."
     }
   ],
   "vibeCheck": {
