@@ -8,12 +8,31 @@ import (
 	"os"
 	"testing"
 
+	"github.com/AtomicWasTaken/surge/internal/ai"
 	"github.com/AtomicWasTaken/surge/internal/config"
 	"github.com/AtomicWasTaken/surge/internal/model"
 	"github.com/AtomicWasTaken/surge/internal/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubAIClient struct {
+	response *ai.CompletionResponse
+	err      error
+	req      *ai.CompletionRequest
+}
+
+func (s *stubAIClient) Complete(ctx context.Context, req *ai.CompletionRequest) (*ai.CompletionResponse, error) {
+	s.req = req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.response, nil
+}
+
+func (s *stubAIClient) Name() string {
+	return "stub"
+}
 
 type stubPRClient struct {
 	comments                []*model.PRComment
@@ -36,10 +55,25 @@ type stubPRClient struct {
 	deleteReviewCommentErrs map[int64]error
 	deleteReviewErrs        map[int64]error
 	dismissReviewErrs       map[int64]error
+	pr                      *model.PR
+	prErr                   error
+	files                   []model.FileChange
+	filesErr                error
+	labels                  []string
+	listLabelsErr           error
+	addLabelsCalls          [][]string
+	removeLabelCalls        []string
+	upsertedLabels          []labelSpec
+	addLabelsErr            error
+	removeLabelErr          error
+	upsertLabelErr          error
 }
 
 func (s *stubPRClient) GetPR(ctx context.Context, owner, repo string, prNumber int) (*model.PR, error) {
-	return nil, nil
+	if s.prErr != nil {
+		return nil, s.prErr
+	}
+	return s.pr, nil
 }
 
 func (s *stubPRClient) GetDiff(ctx context.Context, owner, repo string, prNumber int) (string, error) {
@@ -47,7 +81,10 @@ func (s *stubPRClient) GetDiff(ctx context.Context, owner, repo string, prNumber
 }
 
 func (s *stubPRClient) GetFiles(ctx context.Context, owner, repo string, prNumber int) ([]model.FileChange, error) {
-	return nil, nil
+	if s.filesErr != nil {
+		return nil, s.filesErr
+	}
+	return s.files, nil
 }
 
 func (s *stubPRClient) GetFileContent(ctx context.Context, owner, repo, path, ref string) (string, error) {
@@ -124,19 +161,453 @@ func (s *stubPRClient) DeleteReviewComment(ctx context.Context, owner, repo stri
 }
 
 func (s *stubPRClient) ListLabels(ctx context.Context, owner, repo string, prNumber int) ([]string, error) {
-	return nil, nil
+	if s.listLabelsErr != nil {
+		return nil, s.listLabelsErr
+	}
+	return s.labels, nil
 }
 
 func (s *stubPRClient) AddLabels(ctx context.Context, owner, repo string, prNumber int, labels []string) error {
+	if s.addLabelsErr != nil {
+		return s.addLabelsErr
+	}
+	s.addLabelsCalls = append(s.addLabelsCalls, append([]string(nil), labels...))
 	return nil
 }
 
 func (s *stubPRClient) RemoveLabel(ctx context.Context, owner, repo string, prNumber int, label string) error {
+	if s.removeLabelErr != nil {
+		return s.removeLabelErr
+	}
+	s.removeLabelCalls = append(s.removeLabelCalls, label)
 	return nil
 }
 
 func (s *stubPRClient) UpsertLabel(ctx context.Context, owner, repo, name, color, description string) error {
+	if s.upsertLabelErr != nil {
+		return s.upsertLabelErr
+	}
+	s.upsertedLabels = append(s.upsertedLabels, labelSpec{Name: name, Color: color, Description: description})
 	return nil
+}
+
+func TestReviewEndToEndDryRun(t *testing.T) {
+	aiClient := &stubAIClient{
+		response: &ai.CompletionResponse{
+			Content:   `{"summary":"Looks good overall.","filesOverview":[{"path":"a.go","changes":"change","risk":"low"}],"findings":[{"severity":"medium","category":"logic","file":"a.go","line":2,"title":"Handle edge case","body":"A branch is missing."}],"vibeCheck":{"score":10,"verdict":"Perfect","flags":[]},"recommendations":["Add a regression test"],"approve":false}`,
+			TokensIn:  12,
+			TokensOut: 34,
+		},
+	}
+	ghClient := &stubPRClient{
+		pr: &model.PR{Title: "PR title", Body: "PR body", ChangedFiles: 1, HeadSHA: "abc123"},
+		files: []model.FileChange{
+			{Path: "a.go", Status: model.FileStatusModified, Additions: 1, Deletions: 0, Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"},
+		},
+	}
+	cfg := &config.Config{
+		AI:                config.AIConfig{Model: "test-model"},
+		ContextDepth:      string(ContextDepthFull),
+		Output:            config.OutputConfig{Format: "json"},
+		Categories:        config.CategoriesConfig{Security: true, Performance: true, Logic: true, Maintainability: true, Vibe: true},
+		CommentMarker:     "SURGE",
+		MaxTokens:         99,
+		Temperature:       0.4,
+		EnablePRLabels:    true,
+		PRLabelPrefix:     "surge",
+		MaxInlineComments: 10,
+		Verbose:           true,
+	}
+	ghClient.fileContents = map[string]string{"a.go@abc123": "package main\n"}
+	o := NewOrchestrator(aiClient, ghClient, cfg)
+
+	stdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+
+	result, err := o.Review(context.Background(), "octo", "surge", 1, true)
+
+	require.NoError(t, w.Close())
+	os.Stdout = stdout
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, aiClient.req)
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	assert.Equal(t, "test-model", aiClient.req.Model)
+	assert.Contains(t, aiClient.req.Messages[0].Content, "Full file content")
+	assert.Contains(t, buf.String(), `"summary": "Looks good overall."`)
+	assert.Equal(t, 1, result.Stats.FilesReviewed)
+	assert.Equal(t, 12, result.Stats.TokensIn)
+	assert.Contains(t, result.VibeCheck.Flags, "ai_fluff")
+	assert.Equal(t, "Excellent. Hand-crafted, idiomatic code.", result.VibeCheck.Verdict)
+}
+
+func TestReviewEndToEndPostAndTerminal(t *testing.T) {
+	aiClient := &stubAIClient{
+		response: &ai.CompletionResponse{
+			Content:   `{"summary":"Plain summary.","findings":[{"severity":"high","category":"logic","file":"a.go","line":2,"title":"Issue","body":"Fix it"}],"vibeCheck":{"score":6,"verdict":"ok","flags":[]},"recommendations":["Ship it"],"approve":true}`,
+			TokensIn:  5,
+			TokensOut: 7,
+		},
+	}
+	ghClient := &stubPRClient{
+		pr:             &model.PR{Title: "PR title", HeadSHA: "abc123"},
+		files:          []model.FileChange{{Path: "a.go", Status: model.FileStatusModified, Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"}},
+		reviewComments: map[int64][]*model.PRReviewComment{},
+	}
+	cfg := &config.Config{
+		AI:             config.AIConfig{Model: "test-model"},
+		Output:         config.OutputConfig{Format: "terminal"},
+		Categories:     config.CategoriesConfig{Security: true, Performance: true, Logic: true, Maintainability: true, Vibe: true},
+		CommentMarker:  "SURGE",
+		EnablePRLabels: false,
+		ContextDepth:   string(ContextDepthDiffOnly),
+	}
+	o := NewOrchestrator(aiClient, ghClient, cfg)
+
+	stdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+
+	result, err := o.Review(context.Background(), "octo", "surge", 1, false)
+
+	require.NoError(t, w.Close())
+	os.Stdout = stdout
+	require.NoError(t, err)
+	assert.True(t, result.Approve)
+	require.Len(t, ghClient.postedCommentBodies, 1)
+	require.Len(t, ghClient.postedReviews, 1)
+
+	var buf bytes.Buffer
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	assert.Contains(t, buf.String(), "Vibe Check")
+}
+
+func TestReviewErrors(t *testing.T) {
+	cfg := &config.Config{
+		AI:            config.AIConfig{Model: "test-model"},
+		ContextDepth:  string(ContextDepthDiffOnly),
+		Output:        config.OutputConfig{Format: "terminal"},
+		Categories:    config.CategoriesConfig{Security: true},
+		CommentMarker: "SURGE",
+	}
+
+	t.Run("pr fetch", func(t *testing.T) {
+		o := NewOrchestrator(&stubAIClient{}, &stubPRClient{prErr: errors.New("boom")}, cfg)
+		_, err := o.Review(context.Background(), "octo", "surge", 1, true)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "failed to fetch PR")
+	})
+
+	t.Run("files fetch", func(t *testing.T) {
+		o := NewOrchestrator(&stubAIClient{}, &stubPRClient{pr: &model.PR{}, filesErr: errors.New("boom")}, cfg)
+		_, err := o.Review(context.Background(), "octo", "surge", 1, true)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "failed to fetch files")
+	})
+
+	t.Run("ai failure", func(t *testing.T) {
+		o := NewOrchestrator(&stubAIClient{err: errors.New("boom")}, &stubPRClient{pr: &model.PR{}, files: nil}, cfg)
+		_, err := o.Review(context.Background(), "octo", "surge", 1, true)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "AI request failed")
+	})
+
+	t.Run("parse failure", func(t *testing.T) {
+		o := NewOrchestrator(&stubAIClient{response: &ai.CompletionResponse{Content: `not json`}}, &stubPRClient{pr: &model.PR{}, files: nil}, cfg)
+		_, err := o.Review(context.Background(), "octo", "surge", 1, true)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "failed to parse AI response")
+	})
+
+	t.Run("post review failure", func(t *testing.T) {
+		client := &stubPRClientWithPostError{
+			stubPRClient: stubPRClient{
+				pr:    &model.PR{},
+				files: []model.FileChange{},
+			},
+			postCommentErr: errors.New("boom"),
+		}
+		o := NewOrchestrator(&stubAIClient{response: &ai.CompletionResponse{
+			Content: `{"summary":"ok","vibeCheck":{"score":5,"verdict":"ok","flags":[]},"recommendations":[],"approve":true}`,
+		}}, client, cfg)
+		_, err := o.Review(context.Background(), "octo", "surge", 1, false)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "failed to post review")
+	})
+}
+
+func TestBuildPRContextAndHelpers(t *testing.T) {
+	o := NewOrchestrator(nil, &stubPRClient{}, &config.Config{CommentMarker: "SURGE"})
+	prCtx := o.buildPRContext(&model.PR{Title: "Title", Body: "Body"}, []model.FileChange{
+		{Path: "a.go", Status: model.FileStatusAdded, Additions: 2, Deletions: 0, Patch: "@@"},
+	})
+
+	assert.Equal(t, "Title", prCtx.Title)
+	assert.Len(t, prCtx.Files, 1)
+	assert.Equal(t, "a.go", prCtx.Files[0].Path)
+	assert.True(t, supportsFileContent(string(model.FileStatusModified)))
+	assert.False(t, supportsFileContent(string(model.FileStatusDeleted)))
+}
+
+func TestSyncPRLabelsAndHelpers(t *testing.T) {
+	client := &stubPRClient{
+		labels: []string{"Surge: Reviewed", "Surge: Decision / Changes Requested", "other"},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{
+		CommentMarker:  "SURGE",
+		EnablePRLabels: true,
+		PRLabelPrefix:  "surge",
+	})
+	result := &model.ReviewResult{
+		Approve: true,
+		Findings: []model.Finding{
+			{Severity: model.SeverityHigh},
+			{Severity: model.SeverityMedium},
+		},
+		Stats: model.ReviewStats{FilesReviewed: 9},
+	}
+
+	err := o.syncPRLabels(context.Background(), "octo", "surge", 1, result)
+	require.NoError(t, err)
+	require.Len(t, client.upsertedLabels, 4)
+	assert.Equal(t, []string{"Surge: Decision / Changes Requested"}, client.removeLabelCalls)
+	require.Len(t, client.addLabelsCalls, 1)
+	assert.Len(t, client.addLabelsCalls[0], 4)
+
+	assert.True(t, isManagedSurgeLabel("surge", "Surge: Reviewed"))
+	assert.False(t, isManagedSurgeLabel("surge", "other"))
+	assert.Equal(t, "high", classifyReviewEffort(&model.ReviewResult{
+		Findings: []model.Finding{{Severity: model.SeverityCritical}},
+	}))
+	assert.Equal(t, "medium", classifyReviewEffort(&model.ReviewResult{
+		Stats: model.ReviewStats{FilesReviewed: 8},
+	}))
+	assert.Equal(t, "low", classifyReviewEffort(&model.ReviewResult{}))
+	assert.Equal(t, "Approved", decisionTitle("approved"))
+	assert.Equal(t, "Changes Requested", decisionTitle("other"))
+	assert.Equal(t, "None", findingsTitle("none found"))
+	assert.Equal(t, "Present", findingsTitle("present"))
+	assert.Equal(t, "", titleWord(""))
+}
+
+func TestSyncPRLabelsErrorsAndEnabledCategories(t *testing.T) {
+	cfg := &config.Config{
+		CommentMarker:  "SURGE",
+		EnablePRLabels: true,
+		PRLabelPrefix:  "",
+		Categories: config.CategoriesConfig{
+			Security: true,
+			Vibe:     true,
+		},
+	}
+	o := NewOrchestrator(nil, &stubPRClient{upsertLabelErr: errors.New("boom")}, cfg)
+	err := o.syncPRLabels(context.Background(), "octo", "surge", 1, &model.ReviewResult{})
+	require.Error(t, err)
+	assert.ElementsMatch(t, []model.Category{model.CategorySecurity, model.CategoryVibe}, o.enabledCategories())
+}
+
+func TestSyncPRLabelsListRemoveAndAddErrors(t *testing.T) {
+	result := &model.ReviewResult{}
+
+	t.Run("list labels error", func(t *testing.T) {
+		o := NewOrchestrator(nil, &stubPRClient{listLabelsErr: errors.New("boom")}, &config.Config{
+			CommentMarker: "SURGE", EnablePRLabels: true,
+		})
+		err := o.syncPRLabels(context.Background(), "o", "r", 1, result)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "boom")
+	})
+
+	t.Run("remove label error", func(t *testing.T) {
+		o := NewOrchestrator(nil, &stubPRClient{
+			labels:         []string{"Surge: Findings / Present"},
+			removeLabelErr: errors.New("boom"),
+		}, &config.Config{CommentMarker: "SURGE", EnablePRLabels: true})
+		err := o.syncPRLabels(context.Background(), "o", "r", 1, result)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "boom")
+	})
+
+	t.Run("add labels error", func(t *testing.T) {
+		o := NewOrchestrator(nil, &stubPRClient{
+			addLabelsErr: errors.New("boom"),
+		}, &config.Config{CommentMarker: "SURGE", EnablePRLabels: true})
+		err := o.syncPRLabels(context.Background(), "o", "r", 1, result)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "boom")
+	})
+}
+
+func TestReviewEmptyDepthAndEnrichError(t *testing.T) {
+	prev := enrichContext
+	t.Cleanup(func() { enrichContext = prev })
+
+	aiClient := &stubAIClient{
+		response: &ai.CompletionResponse{
+			Content: `{"summary":"ok","vibeCheck":{"score":5,"verdict":"ok","flags":[]},"recommendations":[],"approve":true}`,
+		},
+	}
+	ghClient := &stubPRClient{
+		pr:    &model.PR{Title: "PR title"},
+		files: []model.FileChange{},
+	}
+	o := NewOrchestrator(aiClient, ghClient, &config.Config{
+		AI:            config.AIConfig{Model: "m"},
+		Output:        config.OutputConfig{Format: "json"},
+		Categories:    config.CategoriesConfig{Security: true},
+		CommentMarker: "SURGE",
+		ContextDepth:  "",
+	})
+
+	_, err := o.Review(context.Background(), "o", "r", 1, true)
+	require.NoError(t, err)
+	assert.Contains(t, aiClient.req.Messages[0].Content, "Diff:")
+
+	enrichContext = func(o *Orchestrator, ctx context.Context, owner, repo string, pr *model.PR, prCtx *PRContext, depth ContextDepth) ([]contextWarning, error) {
+		return nil, errors.New("boom")
+	}
+	_, err = o.Review(context.Background(), "o", "r", 1, true)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to load PR context")
+}
+
+func TestDeleteOldCommentsListReviewCommentsError(t *testing.T) {
+	client := &stubPRClient{
+		reviews:                []*model.PRReview{{ID: 1, Body: "<!-- SURGE_INLINE -->", State: "COMMENTED"}},
+		listReviewCommentsErrs: map[int64]error{1: errors.New("boom")},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{CommentMarker: "SURGE"})
+	stats, err := o.deleteOldComments(context.Background(), "o", "r", 1)
+	require.Error(t, err)
+	assert.Equal(t, 1, stats.failedOperations)
+	assert.ErrorContains(t, err, "list review comments for review 1")
+}
+
+func TestTitleWordInvalidRune(t *testing.T) {
+	assert.Equal(t, string([]byte{0xff}), titleWord(string([]byte{0xff})))
+}
+
+func TestPostReviewBranchesAndErrors(t *testing.T) {
+	t.Run("approve event and label warning", func(t *testing.T) {
+		client := &stubPRClient{
+			reviewComments: map[int64][]*model.PRReviewComment{},
+			listLabelsErr:  errors.New("labels unavailable"),
+		}
+		cfg := &config.Config{
+			CommentMarker:         "SURGE",
+			EnablePRLabels:        true,
+			DisableSummaryComment: true,
+			MaxInlineComments:     1,
+		}
+		o := NewOrchestrator(nil, client, cfg)
+		result := &model.ReviewResult{
+			Approve: true,
+			Findings: []model.Finding{
+				{Severity: model.SeverityHigh, File: "a.go", Line: 2, Title: "Bug", Body: "Fix"},
+				{Severity: model.SeverityHigh, File: "a.go", Line: 2, Title: "Bug2", Body: "Fix"},
+			},
+		}
+		files := []model.FileChange{{Path: "a.go", Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"}}
+
+		stdout := os.Stdout
+		r, w, err := os.Pipe()
+		require.NoError(t, err)
+		os.Stdout = w
+
+		err = o.postReview(context.Background(), "o", "r", 1, result, files)
+
+		require.NoError(t, w.Close())
+		os.Stdout = stdout
+		require.NoError(t, err)
+		require.Len(t, client.postedReviews, 1)
+		assert.Equal(t, "APPROVE", client.postedReviews[0].Event)
+		assert.Len(t, client.postedReviews[0].Comments, 1)
+
+		var buf bytes.Buffer
+		_, err = io.Copy(&buf, r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		assert.Contains(t, buf.String(), "Warning: failed to sync PR labels")
+	})
+
+	t.Run("summary post error", func(t *testing.T) {
+		client := &stubPRClientWithPostError{stubPRClient: stubPRClient{}, postCommentErr: errors.New("boom")}
+		o := NewOrchestrator(nil, client, &config.Config{CommentMarker: "SURGE"})
+		err := o.postReview(context.Background(), "o", "r", 1, &model.ReviewResult{}, nil)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "boom")
+	})
+
+	t.Run("review post error", func(t *testing.T) {
+		client := &stubPRClientWithPostError{stubPRClient: stubPRClient{}, postReviewErr: errors.New("boom")}
+		o := NewOrchestrator(nil, client, &config.Config{CommentMarker: "SURGE", DisableSummaryComment: true})
+		err := o.postReview(context.Background(), "o", "r", 1, &model.ReviewResult{
+			Findings: []model.Finding{{Severity: model.SeverityHigh, File: "a.go", Line: 2, Title: "Bug", Body: "Fix"}},
+		}, []model.FileChange{{Path: "a.go", Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"}})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "boom")
+	})
+}
+
+type stubPRClientWithPostError struct {
+	stubPRClient
+	postCommentErr error
+	postReviewErr  error
+}
+
+func (s *stubPRClientWithPostError) PostComment(ctx context.Context, owner, repo string, prNumber int, body string) error {
+	if s.postCommentErr != nil {
+		return s.postCommentErr
+	}
+	return s.stubPRClient.PostComment(ctx, owner, repo, prNumber, body)
+}
+
+func (s *stubPRClientWithPostError) PostReview(ctx context.Context, owner, repo string, prNumber int, review *model.ReviewInput) error {
+	if s.postReviewErr != nil {
+		return s.postReviewErr
+	}
+	return s.stubPRClient.PostReview(ctx, owner, repo, prNumber, review)
+}
+
+func TestBuildInlineCommentsSkipsUnmappableFindings(t *testing.T) {
+	o := NewOrchestrator(nil, &stubPRClient{}, &config.Config{CommentMarker: "SURGE"})
+	comments := o.buildInlineComments(&model.ReviewResult{
+		Findings: []model.Finding{
+			{Severity: model.SeverityHigh, File: "", Line: 2, Title: "skip", Body: "skip"},
+			{Severity: model.SeverityHigh, File: "a.go", Line: 0, Title: "skip", Body: "skip"},
+			{Severity: model.SeverityHigh, File: "a.go", Line: 9, Title: "skip", Body: "skip"},
+		},
+	}, []model.FileChange{{Path: "a.go", Patch: "@@ -1,2 +1,2 @@\n line1\n+line2"}})
+	assert.Empty(t, comments)
+}
+
+func TestDeleteOldCommentsListFailures(t *testing.T) {
+	client := &stubPRClient{
+		listCommentsErr: errors.New("boom comments"),
+		listReviewsErr:  errors.New("boom reviews"),
+	}
+	o := NewOrchestrator(nil, client, &config.Config{CommentMarker: "SURGE"})
+	stats, err := o.deleteOldComments(context.Background(), "o", "r", 1)
+	require.Error(t, err)
+	assert.Equal(t, 2, stats.failedOperations)
+	assert.ErrorContains(t, err, "list issue comments")
+	assert.ErrorContains(t, err, "list reviews")
+}
+
+func TestFindPositionInPatchBranches(t *testing.T) {
+	assert.Equal(t, 0, findPositionInPatch("", 1))
+	assert.Equal(t, 3, findPositionInPatch("@@ -1,2 +1,2 @@\n line1\n+line2", 2))
+	assert.Equal(t, 0, findPositionInPatch("@@ -1,2 +1,2 @@\n-line1\n line2", 1))
 }
 
 func TestDeleteOldCommentsCleansIssueCommentsAndSupersedesReviews(t *testing.T) {
@@ -227,6 +698,21 @@ func TestDeleteOldCommentsSkipsUnknownAndEmptyStates(t *testing.T) {
 		dismissedReviews: 1,
 		skippedReviews:   2,
 	}, stats)
+}
+
+func TestDeleteOldCommentsSkipsDismissedReviews(t *testing.T) {
+	client := &stubPRClient{
+		reviews: []*model.PRReview{
+			{ID: 40, Body: "<!-- SURGE_INLINE -->", State: "DISMISSED"},
+		},
+		reviewComments: map[int64][]*model.PRReviewComment{
+			40: {},
+		},
+	}
+	o := NewOrchestrator(nil, client, &config.Config{CommentMarker: "SURGE"})
+	stats, err := o.deleteOldComments(context.Background(), "o", "r", 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.skippedReviews)
 }
 
 func TestDeleteOldCommentsContinuesAfterCleanupFailures(t *testing.T) {

@@ -39,6 +39,35 @@ type envBinding struct {
 	env string
 }
 
+var (
+	configEnvBindings = []envBinding{
+		{key: "github.token", env: "SURGE_GITHUB_TOKEN"},
+		{key: "github.owner", env: "SURGE_GITHUB_OWNER"},
+		{key: "github.repo", env: "SURGE_GITHUB_REPO"},
+		{key: "github.prNumber", env: "SURGE_PR_NUMBER"},
+		{key: "ai.provider", env: "SURGE_AI_PROVIDER"},
+		{key: "ai.model", env: "SURGE_AI_MODEL"},
+		{key: "ai.baseUrl", env: "SURGE_AI_BASE_URL"},
+		{key: "ai.apiKey", env: "SURGE_AI_API_KEY"},
+		{key: "contextDepth", env: "SURGE_CONTEXT_DEPTH"},
+		{key: "output.format", env: "SURGE_OUTPUT"},
+		{key: "output.showStats", env: "SURGE_SHOW_STATS"},
+		{key: "maxInlineComments", env: "SURGE_MAX_INLINE"},
+		{key: "maxTokens", env: "SURGE_MAX_TOKENS"},
+		{key: "temperature", env: "SURGE_TEMPERATURE"},
+		{key: "dryRun", env: "SURGE_DRY_RUN"},
+		{key: "verbose", env: "SURGE_VERBOSE"},
+		{key: "noInline", env: "SURGE_NO_INLINE"},
+		{key: "noSummary", env: "SURGE_NO_SUMMARY"},
+		{key: "enablePRLabels", env: "SURGE_ENABLE_PR_LABELS"},
+		{key: "prLabelPrefix", env: "SURGE_PR_LABEL_PREFIX"},
+	}
+	bindEnv = func(v *viper.Viper, key string, envs ...string) error {
+		args := append([]string{key}, envs...)
+		return v.BindEnv(args...)
+	}
+)
+
 // Config represents the full surge configuration.
 type Config struct {
 	AI           AIConfig         `mapstructure:"ai"`
@@ -151,29 +180,8 @@ func configureConfigSources(v *viper.Viper, configPath string) {
 
 func bindEnvironment(v *viper.Viper) error {
 	var errs []error
-	for _, binding := range []envBinding{
-		{key: "github.token", env: "SURGE_GITHUB_TOKEN"},
-		{key: "github.owner", env: "SURGE_GITHUB_OWNER"},
-		{key: "github.repo", env: "SURGE_GITHUB_REPO"},
-		{key: "github.prNumber", env: "SURGE_PR_NUMBER"},
-		{key: "ai.provider", env: "SURGE_AI_PROVIDER"},
-		{key: "ai.model", env: "SURGE_AI_MODEL"},
-		{key: "ai.baseUrl", env: "SURGE_AI_BASE_URL"},
-		{key: "ai.apiKey", env: "SURGE_AI_API_KEY"},
-		{key: "contextDepth", env: "SURGE_CONTEXT_DEPTH"},
-		{key: "output.format", env: "SURGE_OUTPUT"},
-		{key: "output.showStats", env: "SURGE_SHOW_STATS"},
-		{key: "maxInlineComments", env: "SURGE_MAX_INLINE"},
-		{key: "maxTokens", env: "SURGE_MAX_TOKENS"},
-		{key: "temperature", env: "SURGE_TEMPERATURE"},
-		{key: "dryRun", env: "SURGE_DRY_RUN"},
-		{key: "verbose", env: "SURGE_VERBOSE"},
-		{key: "noInline", env: "SURGE_NO_INLINE"},
-		{key: "noSummary", env: "SURGE_NO_SUMMARY"},
-		{key: "enablePRLabels", env: "SURGE_ENABLE_PR_LABELS"},
-		{key: "prLabelPrefix", env: "SURGE_PR_LABEL_PREFIX"},
-	} {
-		if err := v.BindEnv(binding.key, binding.env); err != nil {
+	for _, binding := range configEnvBindings {
+		if err := bindEnv(v, binding.key, binding.env); err != nil {
 			errs = append(errs, fmt.Errorf("%s -> %s: %w", binding.key, binding.env, err))
 		}
 	}

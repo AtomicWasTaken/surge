@@ -47,6 +47,10 @@ type contextWarning struct {
 	err  error
 }
 
+var enrichContext = func(o *Orchestrator, ctx context.Context, owner, repo string, pr *model.PR, prCtx *PRContext, depth ContextDepth) ([]contextWarning, error) {
+	return o.enrichPRContext(ctx, owner, repo, pr, prCtx, depth)
+}
+
 // NewOrchestrator creates a new review orchestrator.
 func NewOrchestrator(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) *Orchestrator {
 	return &Orchestrator{
@@ -91,7 +95,7 @@ func (o *Orchestrator) Review(ctx context.Context, owner, repo string, prNumber 
 	if depth == "" {
 		depth = ContextDepthDiffOnly
 	}
-	contextWarnings, err := o.enrichPRContext(ctx, owner, repo, pr, prCtx, depth)
+	contextWarnings, err := enrichContext(o, ctx, owner, repo, pr, prCtx, depth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load PR context: %w", err)
 	}

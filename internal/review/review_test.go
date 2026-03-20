@@ -101,6 +101,107 @@ func TestVibeDetector_NoDeductionForCleanCode(t *testing.T) {
 	assert.GreaterOrEqual(t, result.VibeCheck.Score, 8)
 }
 
+func TestVibeDetectorVerdictBuckets(t *testing.T) {
+	d := NewVibeDetector()
+
+	result := &model.ReviewResult{
+		Summary: "Looks good.",
+		VibeCheck: model.VibeCheck{
+			Score: 10,
+		},
+		Findings: []model.Finding{
+			{Category: model.CategoryVibe, Title: "over-engineered abstraction"},
+			{Category: model.CategoryVibe, Title: "over-engineered factory"},
+			{Category: model.CategoryVibe, Title: "over-engineered wrapper"},
+			{Category: model.CategoryVibe, Title: "over-engineered layer"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, "Mixed. Some AI fingerprints detected.", result.VibeCheck.Verdict)
+
+	result = &model.ReviewResult{
+		Summary: "Looks good.",
+		VibeCheck: model.VibeCheck{
+			Score: 6,
+		},
+		Findings: []model.Finding{
+			{Category: model.CategoryVibe, Title: "over-engineered abstraction"},
+			{Category: model.CategoryVibe, Title: "over-engineered factory"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, "Concerning. Significant over-engineering or context issues.", result.VibeCheck.Verdict)
+
+	result = &model.ReviewResult{
+		Summary: "Looks good.",
+		VibeCheck: model.VibeCheck{
+			Score: 3,
+		},
+		Findings: []model.Finding{
+			{Category: model.CategoryVibe, Title: "over-engineered abstraction"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, "Concerning. Significant over-engineering or context issues.", result.VibeCheck.Verdict)
+}
+
+func TestVibeDetectorSuspiciouslyPerfectAndDedupes(t *testing.T) {
+	d := NewVibeDetector()
+	result := &model.ReviewResult{
+		Summary: "Focused summary.",
+		VibeCheck: model.VibeCheck{
+			Score: 10,
+		},
+		Findings: []model.Finding{
+			{Category: model.CategoryLogic, Title: "a"},
+			{Category: model.CategoryLogic, Title: "b"},
+			{Category: model.CategoryLogic, Title: "c"},
+			{Category: model.CategoryLogic, Title: "d"},
+			{Category: model.CategoryLogic, Title: "e"},
+			{Category: model.CategoryLogic, Title: "f"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, 8, result.VibeCheck.Score)
+	assert.Equal(t, []string{"suspiciously_perfect"}, result.VibeCheck.Flags)
+
+	result = &model.ReviewResult{
+		Summary: "Looks good.",
+		VibeCheck: model.VibeCheck{
+			Score: 9,
+			Flags: []string{"existing", "existing"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, []string{"existing", "ai_fluff"}, result.VibeCheck.Flags)
+}
+
+func TestVibeDetectorScoreClamps(t *testing.T) {
+	d := NewVibeDetector()
+
+	result := &model.ReviewResult{
+		Summary: "Looks good.",
+		VibeCheck: model.VibeCheck{
+			Score: 1,
+		},
+		Findings: []model.Finding{
+			{Category: model.CategoryVibe, Title: "over-engineered abstraction"},
+			{Category: model.CategoryVibe, Title: "over-engineered factory"},
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, 1, result.VibeCheck.Score)
+
+	result = &model.ReviewResult{
+		Summary: "Focused summary.",
+		VibeCheck: model.VibeCheck{
+			Score: 11,
+		},
+	}
+	d.Detect(result, "")
+	assert.Equal(t, 10, result.VibeCheck.Score)
+}
+
 func TestPromptBuilder_SystemPrompt(t *testing.T) {
 	pb := NewPromptBuilder()
 	prompt := pb.SystemPrompt()

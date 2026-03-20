@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+var claudeMarshal = json.Marshal
+
 // ClaudeClient implements AIClient for the Anthropic Claude API.
 type ClaudeClient struct {
 	apiKey  string
@@ -48,8 +50,8 @@ func (c *ClaudeClient) Complete(ctx context.Context, req *CompletionRequest) (*C
 	}
 
 	payload := map[string]interface{}{
-		"model":    c.model,
-		"messages":  messages,
+		"model":      c.model,
+		"messages":   messages,
 		"max_tokens": req.MaxTokens,
 	}
 
@@ -57,7 +59,7 @@ func (c *ClaudeClient) Complete(ctx context.Context, req *CompletionRequest) (*C
 		payload["temperature"] = req.Temperature
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := claudeMarshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}

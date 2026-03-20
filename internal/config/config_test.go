@@ -1,11 +1,14 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -98,4 +101,81 @@ func TestExpandEnvVar(t *testing.T) {
 
 	result = expandEnv("${UNSET_VAR}")
 	assert.Equal(t, "${UNSET_VAR}", result)
+}
+
+func TestLoadReadConfigErrorAndEnvExpansion(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "surge.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("{"), 0644))
+
+	_, err := Load(configPath)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to read config")
+
+	assert.NoError(t, os.Setenv("BASE_URL_ENV", "http://example.com"))
+	defer func() { _ = os.Unsetenv("BASE_URL_ENV") }()
+
+	cfgPath := filepath.Join(tmpDir, "expanded.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+ai:
+  provider: litellm
+  baseUrl: "${BASE_URL_ENV}"
+categories:
+  security: true
+  performance: true
+  logic: true
+  maintainability: true
+  vibe: true
+output:
+  format: terminal
+contextDepth: diff-only
+`), 0644))
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(t, "http://example.com", cfg.AI.BaseURL)
+}
+
+func TestBindEnvironmentErrorAggregation(t *testing.T) {
+	prev := bindEnv
+	t.Cleanup(func() { bindEnv = prev })
+	bindEnv = func(v *viper.Viper, key string, envs ...string) error {
+		if key == "github.token" {
+			return errors.New("bind failed")
+		}
+		return nil
+	}
+
+	err := bindEnvironment(viper.New())
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "github.token -> SURGE_GITHUB_TOKEN: bind failed")
+}
+
+func TestLoadUnmarshalError(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "surge.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+ai: "bad"
+`), 0644))
+
+	_, err := Load(configPath)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to unmarshal config")
+}
+
+func TestLoadMissingExplicitConfigPath(t *testing.T) {
+	_, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to read config")
+}
+
+func TestLoadBindEnvironmentError(t *testing.T) {
+	prev := bindEnv
+	t.Cleanup(func() { bindEnv = prev })
+	bindEnv = func(v *viper.Viper, key string, envs ...string) error {
+		return errors.New("bind failed")
+	}
+
+	_, err := Load("")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "failed to bind environment variables")
 }

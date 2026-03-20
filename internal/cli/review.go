@@ -1,13 +1,33 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/AtomicWasTaken/surge/internal/ai"
 	"github.com/AtomicWasTaken/surge/internal/config"
 	"github.com/AtomicWasTaken/surge/internal/github"
+	"github.com/AtomicWasTaken/surge/internal/model"
 	"github.com/AtomicWasTaken/surge/internal/review"
 	"github.com/spf13/cobra"
+)
+
+type reviewExecutor interface {
+	Review(ctx context.Context, owner, repo string, prNumber int, dryRun bool) (*model.ReviewResult, error)
+}
+
+func defaultGitHubPRClient(token string) github.PRClient {
+	return github.NewGitHubClient(token)
+}
+
+func defaultReviewExecutor(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
+	return review.NewOrchestrator(aiClient, ghClient, cfg)
+}
+
+var (
+	newGitHubPRClient = defaultGitHubPRClient
+	newReviewExecutor = defaultReviewExecutor
+	buildAIClient     = newAIClient
 )
 
 func runReview(cmd *cobra.Command, args []string) error {
@@ -30,13 +50,13 @@ func runReview(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	aiClient, err := newAIClient(cfg)
+	aiClient, err := buildAIClient(cfg)
 	if err != nil {
 		return err
 	}
 
-	ghClient := github.NewGitHubClient(cfg.GitHub.Token)
-	orch := review.NewOrchestrator(aiClient, ghClient, cfg)
+	ghClient := newGitHubPRClient(cfg.GitHub.Token)
+	orch := newReviewExecutor(aiClient, ghClient, cfg)
 
 	result, err := orch.Review(cmd.Context(), owner, repo, prNumber, flagDryRun)
 	if err != nil {

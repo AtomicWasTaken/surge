@@ -62,11 +62,12 @@ Example:
 )
 
 var (
-	flagConfig     string
-	flagDryRun     bool
-	flagVerbose    bool
-	flagNoInline   bool
-	flagNoSummary  bool
+	flagConfig    string
+	flagDryRun    bool
+	flagVerbose   bool
+	flagNoInline  bool
+	flagNoSummary bool
+	getwd         = os.Getwd
 )
 
 func Execute() error {
@@ -185,13 +186,13 @@ func runDiff(cmd *cobra.Command, args []string) error {
 }
 
 func cwd() string {
-	dir, _ := os.Getwd()
+	dir, _ := getwd()
 	return dir
 }
 
 // detectGitInfo attempts to detect owner/repo from the local git config.
 func detectGitInfo() (owner, repo string, err error) {
-	dir, err := os.Getwd()
+	dir, err := getwd()
 	if err != nil {
 		return "", "", err
 	}

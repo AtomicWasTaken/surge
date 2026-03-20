@@ -10,6 +10,11 @@ import (
 // JSONOutput renders review results as structured JSON.
 type JSONOutput struct{}
 
+var (
+	jsonMarshalIndent = json.MarshalIndent
+	jsonMarshal       = json.Marshal
+)
+
 // NewJSONOutput creates a new JSON output renderer.
 func NewJSONOutput() *JSONOutput {
 	return &JSONOutput{}
@@ -38,7 +43,7 @@ func (j *JSONOutput) Render(result *model.ReviewResult) string {
 		},
 	}
 
-	data, err := json.MarshalIndent(out, "", "  ")
+	data, err := jsonMarshalIndent(out, "", "  ")
 	if err != nil {
 		return fmt.Sprintf(`{"error": "failed to marshal JSON: %v"}`, err)
 	}
@@ -48,7 +53,7 @@ func (j *JSONOutput) Render(result *model.ReviewResult) string {
 
 // RenderCompact renders the review result as compact JSON (single line).
 func (j *JSONOutput) RenderCompact(result *model.ReviewResult) string {
-	data, err := json.Marshal(result)
+	data, err := jsonMarshal(result)
 	if err != nil {
 		return fmt.Sprintf(`{"error": "failed to marshal JSON: %v"}`, err)
 	}
