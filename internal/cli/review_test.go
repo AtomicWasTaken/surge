@@ -478,18 +478,14 @@ categories:
 
 	prevConfig := flagConfig
 	prevDryRun := flagDryRun
-	prevGitHubFactory := newGitHubPRClient
-	prevExecFactory := newReviewExecutor
-	prevBuildAIClient := buildAIClient
 	t.Cleanup(func() {
 		flagConfig = prevConfig
 		flagDryRun = prevDryRun
-		newGitHubPRClient = prevGitHubFactory
-		newReviewExecutor = prevExecFactory
-		buildAIClient = prevBuildAIClient
 	})
 	flagConfig = cfgPath
-	newGitHubPRClient = func(token string) github.PRClient { return &dummyPRClient{} }
+
+	deps := defaultReviewDeps()
+	deps.newGitHubPRClient = func(token string) github.PRClient { return &dummyPRClient{} }
 
 	makeCmd := func() *cobra.Command {
 		cmd := &cobra.Command{Use: "review"}
@@ -512,7 +508,8 @@ categories:
 
 	t.Run("dry run success", func(t *testing.T) {
 		flagDryRun = true
-		newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
+		runDeps := deps
+		runDeps.newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
 			return &stubReviewExecutor{result: &model.ReviewResult{Approve: true}}
 		}
 
@@ -521,7 +518,7 @@ categories:
 		require.NoError(t, err)
 		os.Stdout = w
 
-		err = runReview(makeCmd(), nil)
+		err = runReviewWithDeps(makeCmd(), nil, runDeps)
 
 		require.NoError(t, w.Close())
 		os.Stdout = stdout
@@ -536,7 +533,8 @@ categories:
 
 	t.Run("post success", func(t *testing.T) {
 		flagDryRun = false
-		newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
+		runDeps := deps
+		runDeps.newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
 			return &stubReviewExecutor{result: &model.ReviewResult{Approve: false}}
 		}
 
@@ -545,7 +543,7 @@ categories:
 		require.NoError(t, err)
 		os.Stdout = w
 
-		err = runReview(makeCmd(), nil)
+		err = runReviewWithDeps(makeCmd(), nil, runDeps)
 
 		require.NoError(t, w.Close())
 		os.Stdout = stdout
@@ -559,11 +557,12 @@ categories:
 	})
 
 	t.Run("review failure", func(t *testing.T) {
-		newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
+		runDeps := deps
+		runDeps.newReviewExecutor = func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
 			return &stubReviewExecutor{err: errors.New("boom")}
 		}
 
-		err := runReview(makeCmd(), nil)
+		err := runReviewWithDeps(makeCmd(), nil, runDeps)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "review failed: boom")
 	})
@@ -592,12 +591,12 @@ categories:
 `), 0644))
 
 	prevConfig := flagConfig
-	prevBuildAIClient := buildAIClient
 	t.Cleanup(func() {
 		flagConfig = prevConfig
-		buildAIClient = prevBuildAIClient
 	})
 	flagConfig = cfgPath
+
+	deps := defaultReviewDeps()
 
 	makeCmd := func() *cobra.Command {
 		cmd := &cobra.Command{Use: "review"}
@@ -651,10 +650,11 @@ categories:
   maintainability: true
   vibe: true
 `), 0644))
-		buildAIClient = func(cfg *config.Config) (ai.AIClient, error) {
+		runDeps := deps
+		runDeps.buildAIClient = func(cfg *config.Config) (ai.AIClient, error) {
 			return nil, errors.New("boom")
 		}
-		err := runReview(makeCmd(), nil)
+		err := runReviewWithDeps(makeCmd(), nil, runDeps)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "boom")
 	})

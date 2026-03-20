@@ -1,6 +1,6 @@
 # surge
 
-[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Coverage](https://img.shields.io/badge/Coverage-100%25-2da44e)](#)
 [![Tests](https://img.shields.io/badge/Tests-passing-2da44e)](#)
 
