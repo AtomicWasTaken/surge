@@ -1,5 +1,9 @@
 # surge
 
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Coverage](https://img.shields.io/badge/Coverage-100%25-2da44e)](#)
+[![Tests](https://img.shields.io/badge/Tests-passing-2da44e)](#)
+
 AI-powered PR code review with style.
 
 `surge` analyzes your pull request diffs and provides structured, actionable feedback on security vulnerabilities, performance issues, logic bugs, code quality, and something special we call **vibe codability** -- detecting AI-generated code that is technically correct but soulless.

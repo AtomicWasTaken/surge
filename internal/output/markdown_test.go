@@ -209,6 +209,72 @@ func TestSanitizeBlockquote(t *testing.T) {
 	}
 }
 
+func TestMarkdownHelpers(t *testing.T) {
+	assertContains(t, ScopedCommentMarker("SURGE", CommentScopeInline), "SURGE_INLINE")
+	assertContains(t, CommentMarker("SURGE"), "SURGE")
+	markers := ScopedCommentMarkers("SURGE")
+	if len(markers) != 2 {
+		t.Fatalf("expected 2 scoped markers")
+	}
+	assertContains(t, SeverityEmoji(model.SeverityCritical), "🔴")
+	assertContains(t, SeverityEmoji(model.SeverityHigh), "🟠")
+	assertContains(t, SeverityEmoji(model.SeverityMedium), "🟡")
+	assertContains(t, SeverityEmoji(model.SeverityLow), "🔵")
+	assertContains(t, SeverityEmoji(model.SeverityInfo), "⚪")
+	assertContains(t, riskEmoji("high"), "🔴")
+	assertContains(t, riskEmoji("medium"), "🟡")
+	assertContains(t, riskEmoji("low"), "🟢")
+	assertContains(t, severityLabel(model.SeverityCritical), "CRITICAL")
+	assertContains(t, severityLabel(model.SeverityHigh), "HIGH")
+	assertContains(t, severityLabel(model.SeverityMedium), "MEDIUM")
+	assertContains(t, severityLabel(model.SeverityLow), "LOW")
+	assertContains(t, severityLabel(model.SeverityInfo), "INFO")
+	assertContains(t, vibeBar(-1), "░")
+	assertContains(t, vibeBar(12), "█")
+}
+
+func TestRenderSummaryAllSeveritiesAndLocationWithoutLine(t *testing.T) {
+	out := NewMarkdownOutput("SURGE")
+	result := &model.ReviewResult{
+		Summary: "Summary.",
+		Findings: []model.Finding{
+			{Severity: model.SeverityCritical, Category: model.CategorySecurity, File: "a.go", Title: "Critical", Body: "Body"},
+			{Severity: model.SeverityInfo, Category: model.CategoryMaintainability, File: "b.go", Title: "Info", Body: "Body"},
+		},
+		VibeCheck: model.VibeCheck{Score: 1, Verdict: "Bad"},
+	}
+
+	rendered := out.RenderSummary(result)
+	assertContains(t, rendered, "🔴 1 critical")
+	assertContains(t, rendered, "⚪ 1 info")
+	assertContains(t, rendered, "<code>a.go</code>")
+	assertContains(t, rendered, "<code>b.go</code>")
+}
+
+func TestRenderSummaryWarningsMediumFlagsAndRecommendations(t *testing.T) {
+	out := NewMarkdownOutput("SURGE")
+	result := &model.ReviewResult{
+		Summary:  "Summary.",
+		Warnings: []string{"warning one", "warning two"},
+		FilesOverview: []model.FileOverview{
+			{Path: "a.go", Changes: "change", Risk: "medium"},
+		},
+		Findings: []model.Finding{
+			{Severity: model.SeverityMedium, Category: model.CategoryLogic, File: "a.go", Line: 2, Title: "Medium", Body: "Body"},
+		},
+		VibeCheck:       model.VibeCheck{Score: 5, Verdict: "Verdict", Flags: []string{"flag-a", "flag-b"}},
+		Recommendations: []string{"one", "two"},
+	}
+
+	rendered := out.RenderSummary(result)
+	assertContains(t, rendered, "🟡 1 medium")
+	assertContains(t, rendered, "⚠️ **Warnings**")
+	assertContains(t, rendered, "- warning one")
+	assertContains(t, rendered, "Flags:** `flag-a`, `flag-b`")
+	assertContains(t, rendered, "- [ ] one")
+	assertContains(t, rendered, "- [ ] two")
+}
+
 func assertContains(t *testing.T, text, want string) {
 	t.Helper()
 	if !strings.Contains(text, want) {

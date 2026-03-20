@@ -1,8 +1,8 @@
 package ai
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +19,9 @@ type LiteLLMClient struct {
 	apiKey  string
 	model   string
 	client  *http.Client
+
+	chatCompletionURLCandidates func(base string) []string
+	responsesURLCandidates      func(base string) []string
 }
 
 // NewLiteLLMClient creates a new litellm client.
@@ -28,6 +31,9 @@ func NewLiteLLMClient(baseURL, apiKey, model string) *LiteLLMClient {
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: 120 * 1e9}, // 120 seconds
+
+		chatCompletionURLCandidates: candidateChatCompletionURLs,
+		responsesURLCandidates:      candidateResponsesURLs,
 	}
 }
 
@@ -57,7 +63,7 @@ func (c *LiteLLMClient) completeChatCompletions(ctx context.Context, req *Comple
 		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
 	}
 
-	urls := candidateChatCompletionURLs(c.baseURL)
+	urls := c.chatCompletionURLCandidates(c.baseURL)
 	tokenFields := []string{"max_tokens", "max_completion_tokens"}
 	var lastErr error
 
@@ -123,7 +129,7 @@ func parseChatCompletionsResponse(respBody []byte) (*CompletionResponse, error) 
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens     int `json:"total_tokens"`
+			TotalTokens      int `json:"total_tokens"`
 		} `json:"usage"`
 		Model string `json:"model"`
 	}
@@ -146,7 +152,7 @@ func parseChatCompletionsResponse(respBody []byte) (*CompletionResponse, error) 
 }
 
 func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
-	urls := candidateResponsesURLs(c.baseURL)
+	urls := c.responsesURLCandidates(c.baseURL)
 	tokenFields := []string{"max_output_tokens", "max_tokens", "max_completion_tokens", ""}
 	var lastErr error
 
@@ -157,71 +163,71 @@ func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRe
 				includeTemperatureOptions = []bool{true, false}
 			}
 			for _, includeTemperature := range includeTemperatureOptions {
-			debugTokenField := tokenField
-			if debugTokenField == "" {
-				debugTokenField = "<none>"
-			}
-			if req.Debug {
-				tempLabel := "<none>"
-				if includeTemperature {
-					tempLabel = fmt.Sprintf("%.2f", req.Temperature)
+				debugTokenField := tokenField
+				if debugTokenField == "" {
+					debugTokenField = "<none>"
 				}
-				fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s token_field=%s max_tokens=%d temperature=%s\n",
-					url, req.Model, debugTokenField, req.MaxTokens, tempLabel)
-			}
-
-			payload := map[string]interface{}{
-				"model":        req.Model,
-				"instructions": req.System,
-				"input":        responsesInputFromMessages(req.Messages),
-				"stream":       true,
-			}
-			if tokenField != "" {
-				payload[tokenField] = req.MaxTokens
-			}
-			if includeTemperature && req.Temperature > 0 {
-				payload["temperature"] = req.Temperature
-			}
-
-			respBody, status, err := c.doJSONPost(ctx, url, payload)
-			if err != nil {
-				lastErr = fmt.Errorf("litellm responses request failed: %w", err)
-				continue
-			}
-			if status == http.StatusOK {
 				if req.Debug {
-					fmt.Fprintf(os.Stderr, "[debug] litellm responses status=%d\n", status)
+					tempLabel := "<none>"
+					if includeTemperature {
+						tempLabel = fmt.Sprintf("%.2f", req.Temperature)
+					}
+					fmt.Fprintf(os.Stderr, "[debug] litellm responses request url=%s model=%s token_field=%s max_tokens=%d temperature=%s\n",
+						url, req.Model, debugTokenField, req.MaxTokens, tempLabel)
 				}
-				content, tokensIn, tokensOut, finishReason, err := parseResponsesSSE(respBody)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse litellm responses stream: %w", err)
-				}
-				return &CompletionResponse{
-					Content:      content,
-					Model:        req.Model,
-					TokensIn:     tokensIn,
-					TokensOut:    tokensOut,
-					FinishReason: finishReason,
-				}, nil
-			}
 
-			if req.Debug {
-				fmt.Fprintf(os.Stderr, "[debug] litellm responses status=%d body=%s\n", status, strings.TrimSpace(string(respBody)))
+				payload := map[string]interface{}{
+					"model":        req.Model,
+					"instructions": req.System,
+					"input":        responsesInputFromMessages(req.Messages),
+					"stream":       true,
+				}
+				if tokenField != "" {
+					payload[tokenField] = req.MaxTokens
+				}
+				if includeTemperature && req.Temperature > 0 {
+					payload["temperature"] = req.Temperature
+				}
+
+				respBody, status, err := c.doJSONPost(ctx, url, payload)
+				if err != nil {
+					lastErr = fmt.Errorf("litellm responses request failed: %w", err)
+					continue
+				}
+				if status == http.StatusOK {
+					if req.Debug {
+						fmt.Fprintf(os.Stderr, "[debug] litellm responses status=%d\n", status)
+					}
+					content, tokensIn, tokensOut, finishReason, err := parseResponsesSSE(respBody)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse litellm responses stream: %w", err)
+					}
+					return &CompletionResponse{
+						Content:      content,
+						Model:        req.Model,
+						TokensIn:     tokensIn,
+						TokensOut:    tokensOut,
+						FinishReason: finishReason,
+					}, nil
+				}
+
+				if req.Debug {
+					fmt.Fprintf(os.Stderr, "[debug] litellm responses status=%d body=%s\n", status, strings.TrimSpace(string(respBody)))
+				}
+				if status == http.StatusNotFound {
+					lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
+					break // try next URL variant
+				}
+				if status == http.StatusBadRequest && isUnsupportedParameter(respBody) {
+					lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
+					continue // try next payload variant
+				}
+				if status >= http.StatusInternalServerError {
+					lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
+					break // try next URL variant
+				}
+				return nil, fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
 			}
-			if status == http.StatusNotFound {
-				lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
-				break // try next URL variant
-			}
-			if status == http.StatusBadRequest && isUnsupportedParameter(respBody) {
-				lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
-				continue // try next payload variant
-			}
-			if status >= http.StatusInternalServerError {
-				lastErr = fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
-				break // try next URL variant
-			}
-			return nil, fmt.Errorf("litellm responses API error (%d): %s", status, string(respBody))
-		}
 		}
 	}
 
@@ -335,9 +341,9 @@ func responsesInputFromMessages(messages []Message) []map[string]interface{} {
 
 func parseResponsesSSE(body []byte) (string, int, int, string, error) {
 	type event struct {
-		Type     string `json:"type"`
-		Delta    string `json:"delta"`
-		Error    struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 		Response struct {
@@ -376,9 +382,9 @@ func parseResponsesSSE(body []byte) (string, int, int, string, error) {
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
 			return nil
 		}
-			if ev.Error.Message != "" {
-				return errors.New(ev.Error.Message)
-			}
+		if ev.Error.Message != "" {
+			return errors.New(ev.Error.Message)
+		}
 		switch ev.Type {
 		case "response.output_text.delta":
 			content.WriteString(ev.Delta)

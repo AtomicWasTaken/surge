@@ -1,16 +1,48 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/AtomicWasTaken/surge/internal/ai"
 	"github.com/AtomicWasTaken/surge/internal/config"
 	"github.com/AtomicWasTaken/surge/internal/github"
+	"github.com/AtomicWasTaken/surge/internal/model"
 	"github.com/AtomicWasTaken/surge/internal/review"
 	"github.com/spf13/cobra"
 )
 
+type reviewExecutor interface {
+	Review(ctx context.Context, owner, repo string, prNumber int, dryRun bool) (*model.ReviewResult, error)
+}
+
+type reviewDeps struct {
+	newGitHubPRClient func(token string) github.PRClient
+	newReviewExecutor func(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor
+	buildAIClient     func(cfg *config.Config) (ai.AIClient, error)
+}
+
+func defaultGitHubPRClient(token string) github.PRClient {
+	return github.NewGitHubClient(token)
+}
+
+func defaultReviewExecutor(aiClient ai.AIClient, ghClient github.PRClient, cfg *config.Config) reviewExecutor {
+	return review.NewOrchestrator(aiClient, ghClient, cfg)
+}
+
+func defaultReviewDeps() reviewDeps {
+	return reviewDeps{
+		newGitHubPRClient: defaultGitHubPRClient,
+		newReviewExecutor: defaultReviewExecutor,
+		buildAIClient:     newAIClient,
+	}
+}
+
 func runReview(cmd *cobra.Command, args []string) error {
+	return runReviewWithDeps(cmd, args, defaultReviewDeps())
+}
+
+func runReviewWithDeps(cmd *cobra.Command, args []string, deps reviewDeps) error {
 	cfg, err := loadReviewConfig(cmd)
 	if err != nil {
 		return err
@@ -30,13 +62,13 @@ func runReview(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	aiClient, err := newAIClient(cfg)
+	aiClient, err := deps.buildAIClient(cfg)
 	if err != nil {
 		return err
 	}
 
-	ghClient := github.NewGitHubClient(cfg.GitHub.Token)
-	orch := review.NewOrchestrator(aiClient, ghClient, cfg)
+	ghClient := deps.newGitHubPRClient(cfg.GitHub.Token)
+	orch := deps.newReviewExecutor(aiClient, ghClient, cfg)
 
 	result, err := orch.Review(cmd.Context(), owner, repo, prNumber, flagDryRun)
 	if err != nil {
