@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.0](https://github.com/AtomicWasTaken/surge/compare/v0.3.2...v0.4.0) (2026-03-20)
+
+
+### Features
+
+* add AI agent fix suggestions and redesign review output ([9e842b1](https://github.com/AtomicWasTaken/surge/commit/9e842b16ded778cc20f7d72d8a14139f59eb7176))
+
+
+### Bug Fixes
+
+* address PR review feedback ([e94fe1a](https://github.com/AtomicWasTaken/surge/commit/e94fe1af5c2d721127ca95db5573c33c79f703b5))
+* align suggestion optionality, stabilize empty badge line, harden table cell escaping ([6c51ed5](https://github.com/AtomicWasTaken/surge/commit/6c51ed565c0a25cfc758dcd744c1f26f2157ffec))
+* centralize severity emoji, harden suggestion rendering, add inline comment tests ([1a5b6b2](https://github.com/AtomicWasTaken/surge/commit/1a5b6b2815a76bfd4fbed8476b465f2cb6b1dde8))
+* **ci:** build golangci-lint with workflow Go toolchain ([f16ef1f](https://github.com/AtomicWasTaken/surge/commit/f16ef1fbb0705dc0a425bcbd871be093a22cad1f))
+* **ci:** handle final errcheck finding ([c53a723](https://github.com/AtomicWasTaken/surge/commit/c53a723de1ca3f2960b94fd1c0dd2fd5559c31c3))
+* **ci:** satisfy golangci-lint findings ([c1eaa21](https://github.com/AtomicWasTaken/surge/commit/c1eaa21c9021b592833b63869b0a800758468602))
+* **ci:** update golangci-lint for Go 1.26 ([e828ed5](https://github.com/AtomicWasTaken/surge/commit/e828ed5d286b5ecd3a327599a2f9cc2b14b4dbff))
+* clarify empty-category review behavior ([6ceabcf](https://github.com/AtomicWasTaken/surge/commit/6ceabcfd2646637b2fa77190af9dc7900c4a6217))
+* harden full-context fetching ([887e60b](https://github.com/AtomicWasTaken/surge/commit/887e60b303d626cafd7964db3bd8353276897bd1))
+* sanitize all model-generated fields and deduplicate suggestion rendering ([c9c27e2](https://github.com/AtomicWasTaken/surge/commit/c9c27e2d25c3ee2ac3f27eca98e77774abcb15b7))
+* sanitize suggestion text in markdown and inline comment rendering ([827203b](https://github.com/AtomicWasTaken/surge/commit/827203b7e765d400c130a21d414d31da203bf2d0))
+* sanitize terminal suggestion output, fix doc/impl mismatches, decouple spacing ([1558998](https://github.com/AtomicWasTaken/surge/commit/1558998e8f7aaaf47a3683da6d3a380478baf3fd))
+* surface partial context warnings ([de3dca6](https://github.com/AtomicWasTaken/surge/commit/de3dca67484df700d1d4d6e2be6e5c06c5185db9))
+* unify category prompt semantics ([8dd7f74](https://github.com/AtomicWasTaken/surge/commit/8dd7f741100c4cc4e0b612db40bcb0a96cad6574))
+* validate category configuration ([e7c1ad6](https://github.com/AtomicWasTaken/surge/commit/e7c1ad670a52eb55af46fc19cfd3eec648eef65c))
+
 ## [0.3.2](https://github.com/AtomicWasTaken/surge/compare/v0.3.1...v0.3.2) (2026-03-19)
 
 
