@@ -13,17 +13,15 @@ import (
 	"strings"
 )
 
-var (
-	chatCompletionURLCandidates = candidateChatCompletionURLs
-	responsesURLCandidates      = candidateResponsesURLs
-)
-
 // LiteLLMClient implements AIClient for litellm proxies (OpenAI-compatible API).
 type LiteLLMClient struct {
 	baseURL string
 	apiKey  string
 	model   string
 	client  *http.Client
+
+	chatCompletionURLCandidates func(base string) []string
+	responsesURLCandidates      func(base string) []string
 }
 
 // NewLiteLLMClient creates a new litellm client.
@@ -33,6 +31,9 @@ func NewLiteLLMClient(baseURL, apiKey, model string) *LiteLLMClient {
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: 120 * 1e9}, // 120 seconds
+
+		chatCompletionURLCandidates: candidateChatCompletionURLs,
+		responsesURLCandidates:      candidateResponsesURLs,
 	}
 }
 
@@ -62,7 +63,7 @@ func (c *LiteLLMClient) completeChatCompletions(ctx context.Context, req *Comple
 		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
 	}
 
-	urls := chatCompletionURLCandidates(c.baseURL)
+	urls := c.chatCompletionURLCandidates(c.baseURL)
 	tokenFields := []string{"max_tokens", "max_completion_tokens"}
 	var lastErr error
 
@@ -151,7 +152,7 @@ func parseChatCompletionsResponse(respBody []byte) (*CompletionResponse, error) 
 }
 
 func (c *LiteLLMClient) completeResponses(ctx context.Context, req *CompletionRequest) (*CompletionResponse, error) {
-	urls := responsesURLCandidates(c.baseURL)
+	urls := c.responsesURLCandidates(c.baseURL)
 	tokenFields := []string{"max_output_tokens", "max_tokens", "max_completion_tokens", ""}
 	var lastErr error
 

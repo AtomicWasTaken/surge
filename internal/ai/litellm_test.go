@@ -563,21 +563,14 @@ func TestLiteLLMDebugAndSystemBranches(t *testing.T) {
 }
 
 func TestLiteLLMGenericReturnBranchesAndDebugFallback(t *testing.T) {
-	prevChat := chatCompletionURLCandidates
-	prevResp := responsesURLCandidates
-	t.Cleanup(func() {
-		chatCompletionURLCandidates = prevChat
-		responsesURLCandidates = prevResp
-	})
-
-	chatCompletionURLCandidates = func(base string) []string { return nil }
 	client := NewLiteLLMClient("http://example.com", "k", "plain-model")
+	client.chatCompletionURLCandidates = func(base string) []string { return nil }
 	_, err := client.completeChatCompletions(context.Background(), &CompletionRequest{Model: "plain-model"})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "litellm API request failed on all chat/completions URL variants")
 
-	responsesURLCandidates = func(base string) []string { return nil }
 	client = NewLiteLLMClient("http://example.com", "k", "gpt-5-codex")
+	client.responsesURLCandidates = func(base string) []string { return nil }
 	_, err = client.completeResponses(context.Background(), &CompletionRequest{Model: "gpt-5-codex"})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "litellm responses request failed on all URL and token-field variants")
@@ -593,8 +586,6 @@ func TestLiteLLMGenericReturnBranchesAndDebugFallback(t *testing.T) {
 	}))
 	defer server.Close()
 
-	responsesURLCandidates = prevResp
-	chatCompletionURLCandidates = prevChat
 	client = NewLiteLLMClient(server.URL, "k", "gpt-5-codex")
 	client.client = server.Client()
 
