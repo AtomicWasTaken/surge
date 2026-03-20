@@ -214,6 +214,23 @@ func TestResolveReviewTarget(t *testing.T) {
 		assert.Equal(t, "surge", repo)
 		assert.Equal(t, 7, pr)
 	})
+
+	t.Run("returns detection error when git info lookup fails", func(t *testing.T) {
+		prevGetwd := getwd
+		getwd = func() (string, error) {
+			return "", errors.New("boom")
+		}
+		t.Cleanup(func() {
+			getwd = prevGetwd
+		})
+
+		_, _, _, err := resolveReviewTarget(&config.Config{
+			GitHub: config.GitHubConfig{PRNumber: 1},
+		})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "could not detect owner/repo")
+		assert.ErrorContains(t, err, "boom")
+	})
 }
 
 func TestValidateReviewCredentials(t *testing.T) {
@@ -321,18 +338,6 @@ func TestRunReviewEarlyErrors(t *testing.T) {
 	err := runReview(cmd, nil)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "failed to load config")
-}
-
-func TestResolveReviewTargetDetectError(t *testing.T) {
-	tmpDir := t.TempDir()
-	prevWD, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	t.Cleanup(func() { _ = os.Chdir(prevWD) })
-
-	_, _, _, err = resolveReviewTarget(&config.Config{GitHub: config.GitHubConfig{PRNumber: 1}})
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "could not detect owner/repo")
 }
 
 func TestLoadReviewConfigInvalidConfig(t *testing.T) {
